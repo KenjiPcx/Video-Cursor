@@ -26,9 +26,13 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ArrowDown } from 'lucide-react';
 import { useScrollToBottom } from '@/hooks/use-scroll-to-bottom';
 import type { VisibilityType } from './visibility-selector';
+import { api } from "@/convex/_generated/api";
+import { useAction } from 'convex/react';
+import { Id } from '@/convex/_generated/dataModel';
 
 function PureMultimodalInput({
   chatId,
+  projectId,
   input,
   setInput,
   status,
@@ -43,6 +47,7 @@ function PureMultimodalInput({
   selectedVisibilityType,
 }: {
   chatId: string;
+  projectId?: string;
   input: UseChatHelpers['input'];
   setInput: UseChatHelpers['setInput'];
   status: UseChatHelpers['status'];
@@ -58,6 +63,7 @@ function PureMultimodalInput({
 }) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const { width } = useWindowSize();
+  const uploadFileAction = useAction(api.upload.store);
 
   useEffect(() => {
     if (textareaRef.current) {
@@ -130,29 +136,27 @@ function PureMultimodalInput({
   ]);
 
   const uploadFile = async (file: File) => {
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const response = await fetch('/api/files/upload', {
-        method: 'POST',
-        body: formData,
+      // Convert file to ArrayBuffer
+      const bytes = await file.arrayBuffer();
+
+      const result = await uploadFileAction({
+        filename: file.name,
+        mimeType: file.type,
+        bytes,
+        projectId: projectId as Id<"projects">, // Pass projectId when available
       });
 
-      if (response.ok) {
-        const data = await response.json();
-        const { url, pathname, contentType } = data;
-
-        return {
-          url,
-          name: pathname,
-          contentType: contentType,
-        };
-      }
-      const { error } = await response.json();
-      toast.error(error);
+      return {
+        url: result.url,
+        name: result.name,
+        contentType: result.contentType,
+        key: result.key,
+      };
     } catch (error) {
+      console.error('Error uploading file:', error);
       toast.error('Failed to upload file, please try again!');
+      return undefined;
     }
   };
 

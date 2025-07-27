@@ -96,11 +96,23 @@ Text to editing
 - getAllTags for tag management
 - getSignedUrl for secure access
 
-### Next Steps
-1. **Frontend Components**: Update the graph component to display video timeline
-2. **Asset Upload**: Implement file upload functionality
-3. **Timeline UI**: Design timeline visualization for video editing
-4. **Chat Integration**: Connect the existing chat to video editing tools
+### Next Steps  
+1. ✅ **Asset Upload**: Implemented Cloudflare R2 upload with project association
+2. ✅ **Project Management**: Projects now linked to chat threads (1:1 relationship)
+3. ✅ **Chat Integration**: Chat now passes projectId for video editing context
+4. **Timeline UI**: Design timeline visualization for video editing (NEXT)
+5. **Frontend Components**: Update the graph component to display video timeline
+
+### Recent Completions (✅)
+- **R2 Integration**: Files upload to Cloudflare R2 and store metadata in assets table
+- **Project-Thread Linking**: Each project has a dedicated chat thread
+- **Upload Flow**: MultimodalInput now uploads files to project-specific storage
+- **Schema Updates**: Moved from Convex storage to R2 keys, updated validators
+- **UI Improvements**: 
+  - Added project creation modal instead of automatic creation
+  - Stacked project/thread selectors vertically for better layout
+  - Removed "active thread" concept (unnecessary for single-user app)
+  - Simplified thread selection to just pick most recent thread
 
 ## Development Commands
 

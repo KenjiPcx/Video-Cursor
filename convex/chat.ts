@@ -1,22 +1,35 @@
 import { v } from "convex/values";
-import { mutation, httpAction, internalAction, query, action } from "./_generated/server";
+import { mutation, httpAction, internalAction, query, action, internalMutation } from "./_generated/server";
 import { components, internal } from "./_generated/api";
 import { lifeCopilotAgent } from "./agents";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { paginationOptsValidator } from "convex/server";
 import { vStreamArgs } from "@convex-dev/agent";
+import { Attachment, UIMessage } from "ai";
+import { vAttachment } from "./validators";
+import { Doc, Id } from "./_generated/dataModel";
+import dedent from "dedent";
 
 // Create a new thread
 export const createThread = mutation({
-    args: {},
+    args: {
+        projectId: v.id("projects"),
+    },
     returns: v.object({ threadId: v.string() }),
-    handler: async (ctx): Promise<{ threadId: string }> => {
+    handler: async (ctx, { projectId }): Promise<{ threadId: string }> => {
         const userId = await getAuthUserId(ctx);
         if (!userId) throw new Error("Not authenticated");
 
         // Create thread with user association
         const { threadId } = await lifeCopilotAgent.createThread(ctx, {
             userId: userId,
+        });
+
+        // Link thread to project
+        await ctx.runMutation(internal.threadMetadata.linkThreadToProject, {
+            projectId,
+            threadId,
+            makeActive: true
         });
 
         return { threadId };
@@ -37,27 +50,142 @@ export const getLatestThread = query({
     },
 });
 
+// Utility function to convert attachments schema to content format
+export const convertAttachmentsToContent = (
+    attachments: Attachment[] | undefined,
+    prompt: string | undefined
+): Array<
+    | { type: "text"; text: string }
+    | { type: "image"; image: string; mimeType?: string }
+    | { type: "file"; data: string; filename?: string; mimeType: string }
+> => {
+    const content: Array<
+        | { type: "text"; text: string }
+        | { type: "image"; image: string; mimeType?: string }
+        | { type: "file"; data: string; filename?: string; mimeType: string }
+    > = [];
+
+    // Add attachments first
+    if (attachments && attachments.length > 0) {
+        for (const attachment of attachments) {
+            // Check if it's an image based on contentType
+            if (attachment.contentType?.startsWith('image/')) {
+                content.push({
+                    type: "image",
+                    image: attachment.url,
+                    mimeType: attachment.contentType,
+                });
+            } else if (attachment.contentType) {
+                // For non-image files, add them as file attachments
+                content.push({
+                    type: "file",
+                    data: attachment.url,
+                    filename: attachment.name,
+                    mimeType: attachment.contentType,
+                });
+            }
+            // For attachments without contentType, skip or add as text reference
+        }
+    }
+
+    // Add the text prompt
+    if (prompt) {
+        content.push({
+            type: "text",
+            text: prompt,
+        });
+    }
+
+    return content;
+}
+
+type ChatRequest = {
+    message: UIMessage,
+    threadId: string,
+    projectId: string,
+    attachments: Array<Attachment>,
+    timelineData: Doc<"projects">["timelineData"]
+}
+
 // Send a message and get streaming response  
 export const chat = httpAction(async (ctx, request) => {
-    const { message, threadId } = await request.json();
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
 
-    console.log({ message, threadId });
+    const { message, threadId, projectId, attachments, timelineData } = await request.json() as ChatRequest;
+
+    console.log({ message, threadId }, attachments?.length, projectId);
 
     // Continue the thread with the agent
     const { thread } = await lifeCopilotAgent.continueThread(ctx, {
         threadId,
+        userId
     });
+
+    const systemPrompt = dedent`
+        # Role
+        You are a helpful assistant that can help with video editing and creation.
+        You are given a message and a list of attachments.
+        You can use the attachments to help you edit the video.
+        
+        # Instructions
+        Use the tools to fulfill the user's request.
+
+        # Tools
+        You are given access to tools that help you edit and stitch video.
+        - editVideo: Edit the video.
+        - stitchVideo: Stitch the video.
+
+        # Timeline
+        - The assets are arranged in a timeline just like a normal video editor, you have array of timelines which could be audio or video or text.
+        - Each timeline has a list of assets, each asset has a start and end time relative to the overall timeline and also a start and end time relative to the - assets themselves.
+        - The timeline with the highest index has the highest z index
+
+        # Context
+        You are given the following context:
+        - Assets uploaded and a description of the assets or with their summary:
+        ${JSON.stringify(attachments)}
+        - The actual timeline itself of the entire video:
+        ${JSON.stringify(timelineData)}
+        - The user's message below
+
+        Using these context, you should comply with the user's request.
+    `
 
     // Stream the response
     const result = await thread.streamText({
-        messages: [message],
-        maxSteps: 10,
+        system: systemPrompt,
+        messages: [{
+            role: "user",
+            content: convertAttachmentsToContent(attachments, message.content)
+        }],
+        maxSteps: 20,
+        // experimental_activeTools: () => {
+        //     // DO rag here to determine which tools to use
+        //     return ["editVideo", "stitchVideo"];
+        // }
     });
 
     const response = result.toDataStreamResponse();
     response.headers.set("Message-Id", result.messageId);
     return response;
 });
+
+
+export const saveAttachmentsToProjectContext = internalMutation({
+    args: {
+        projectId: v.id("projects"),
+        attachments: v.array(vAttachment),
+    },
+    handler: async (ctx, { projectId, attachments }) => {
+        const project = await ctx.db.get(projectId);
+        if (!project) throw new Error("Project not found");
+
+        const newAttachments = [...(project.context?.attachments || []), ...attachments];
+        await ctx.db.patch(projectId, { context: { attachments: newAttachments } });
+    },
+});
+
 
 export const deleteThread = action({
     args: { threadId: v.string() },
@@ -69,7 +197,7 @@ export const deleteThread = action({
 });
 
 export const sendMessageHttpStream = httpAction(async (ctx, request) => {
-    console.log("Sending message", request);    
+    console.log("Sending message", request);
     const {
         message,
         id: threadId,

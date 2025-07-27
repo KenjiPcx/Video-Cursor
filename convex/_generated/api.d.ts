@@ -10,14 +10,17 @@
 
 import type * as agentTools from "../agentTools.js";
 import type * as agents from "../agents.js";
-import type * as artifactAssets from "../artifactAssets.js";
+import type * as assets from "../assets.js";
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
 import type * as embeddings from "../embeddings.js";
 import type * as http from "../http.js";
 import type * as projects from "../projects.js";
-import type * as setup from "../setup.js";
 import type * as staticAssets from "../staticAssets.js";
+import type * as threadMetadata from "../threadMetadata.js";
+import type * as threadTitles from "../threadTitles.js";
+import type * as upload from "../upload.js";
+import type * as validators from "../validators.js";
 
 import type {
   ApiFromModules,
@@ -36,14 +39,17 @@ import type {
 declare const fullApi: ApiFromModules<{
   agentTools: typeof agentTools;
   agents: typeof agents;
-  artifactAssets: typeof artifactAssets;
+  assets: typeof assets;
   auth: typeof auth;
   chat: typeof chat;
   embeddings: typeof embeddings;
   http: typeof http;
   projects: typeof projects;
-  setup: typeof setup;
   staticAssets: typeof staticAssets;
+  threadMetadata: typeof threadMetadata;
+  threadTitles: typeof threadTitles;
+  upload: typeof upload;
+  validators: typeof validators;
 }>;
 declare const fullApiWithMounts: typeof fullApi;
 

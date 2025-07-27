@@ -1,29 +1,10 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
+import { vStaticAsset } from "./validators";
 
 // Create a new static asset
 export const create = mutation({
-    args: {
-        name: v.string(),
-        type: v.union(
-            v.literal("video"),
-            v.literal("audio"),
-            v.literal("image"),
-            v.literal("text"),
-            v.literal("template"),
-            v.literal("other")
-        ),
-        url: v.optional(v.string()),
-        storageId: v.optional(v.id("_storage")),
-        tags: v.optional(v.array(v.string())),
-        metadata: v.optional(v.object({
-            duration: v.optional(v.number()),
-            width: v.optional(v.number()),
-            height: v.optional(v.number()),
-            size: v.optional(v.number()),
-            mimeType: v.optional(v.string()),
-        })),
-    },
+    args: vStaticAsset,
     handler: async (ctx, args) => {
         return await ctx.db.insert("staticAssets", args);
     },
@@ -119,18 +100,6 @@ export const remove = mutation({
     args: { id: v.id("staticAssets") },
     handler: async (ctx, args) => {
         return await ctx.db.delete(args.id);
-    },
-});
-
-// Generate a signed URL for a static asset if it uses Convex storage
-export const getSignedUrl = query({
-    args: { id: v.id("staticAssets") },
-    handler: async (ctx, args) => {
-        const asset = await ctx.db.get(args.id);
-        if (!asset || !asset.storageId) {
-            return null;
-        }
-        return await ctx.storage.getUrl(asset.storageId);
     },
 });
 
