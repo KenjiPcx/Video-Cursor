@@ -9,8 +9,7 @@ import { Attachment, UIMessage } from "ai";
 import { vAttachment } from "./validators";
 import { Doc, Id } from "./_generated/dataModel";
 import dedent from "dedent";
-import { createDraftScene, ToolCtx } from "./agentTools";
-import { z } from "zod";
+import { createDraftScene, generateImageWithRunway, generateCharacterControlVideo, generateVideoWithHailuo, generateVoiceNarration, generateImageWithFlux, searchVoiceModels, applyCompositionFilter, placeAssetOnTimeline, modifyTimelineAsset, extractInterestingSegments, splitVideoAsset, removeBackground, ToolCtx, reorderTimelineAssets } from "./agentTools";
 
 // Create a new thread
 export const createThread = mutation({
@@ -168,6 +167,19 @@ export const chat = httpAction(async (ctx, request) => {
         maxSteps: 20,
         tools: {
             createDraftScene: createDraftScene(toolProps),
+            generateImageWithRunway: generateImageWithRunway(toolProps),
+            generateCharacterControlVideo: generateCharacterControlVideo(toolProps),
+            generateVideoWithHailuo: generateVideoWithHailuo(toolProps),
+            generateVoiceNarration: generateVoiceNarration(toolProps),
+            generateImageWithFlux: generateImageWithFlux(toolProps),
+            searchVoiceModels: searchVoiceModels(toolProps),
+            applyCompositionFilter: applyCompositionFilter(toolProps),
+            placeAssetOnTimeline: placeAssetOnTimeline(toolProps),
+            modifyTimelineAsset: modifyTimelineAsset(toolProps),
+            extractInterestingSegments: extractInterestingSegments(toolProps),
+            splitVideoAsset: splitVideoAsset(toolProps),
+            removeBackground: removeBackground(toolProps),
+            reorderTimelineAssets: reorderTimelineAssets(toolProps),
         },
         toolCallStreaming: true,
         toolChoice: "auto",

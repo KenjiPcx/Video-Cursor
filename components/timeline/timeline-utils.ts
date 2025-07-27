@@ -28,9 +28,18 @@ export interface TimelineItem {
         duration?: number; // Original asset duration
     };
 
-    // Visual/audio properties
-    volume?: number; // For audio (0-1)
-    opacity?: number; // For video (0-1)
+    // Overlay positioning (for video/image overlays)
+    overlay?: {
+        x: number;        // pixels from left edge
+        y: number;        // pixels from top edge
+        width: number;    // pixels wide
+        height: number;   // pixels tall
+        zIndex?: number;  // layer order (auto-assigned if not provided)
+    };
+
+    // Audio/Visual properties
+    volume?: number;   // 0.0 to 2.0 for audio (enhanced range)
+    opacity?: number;  // 0.0 to 1.0 for video/image transparency
 }
 
 export interface TimelineTrack {
@@ -46,6 +55,54 @@ export interface TimelineData {
     tracks: TimelineTrack[];
     duration: number; // Total timeline duration
     timelineScale: number; // Pixels per second for display
+    compositionFilters?: CompositionFilters;
+}
+
+export interface CompositionFilters {
+    contrast?: number;    // 0.5 to 2.0 (1.0 = normal)
+    saturation?: number;  // 0.0 to 3.0 (1.0 = normal)
+    brightness?: number;  // 0.5 to 2.0 (1.0 = normal)
+    hueRotate?: number;   // -180 to 180 degrees (0 = normal)
+    sepia?: number;       // 0.0 to 1.0 (0 = normal)
+    blur?: number;        // 0 to 10 pixels (0 = normal)
+    grayscale?: number;   // 0.0 to 1.0 (0 = normal)
+    invert?: number;      // 0.0 to 1.0 (0 = normal)
+}
+
+/**
+ * Convert CompositionFilters to CSS filter string
+ */
+export function filtersToCSS(filters?: CompositionFilters): string {
+    if (!filters) return '';
+
+    const filterParts: string[] = [];
+
+    if (filters.contrast !== undefined && filters.contrast !== 1) {
+        filterParts.push(`contrast(${filters.contrast})`);
+    }
+    if (filters.saturation !== undefined && filters.saturation !== 1) {
+        filterParts.push(`saturate(${filters.saturation})`);
+    }
+    if (filters.brightness !== undefined && filters.brightness !== 1) {
+        filterParts.push(`brightness(${filters.brightness})`);
+    }
+    if (filters.hueRotate !== undefined && filters.hueRotate !== 0) {
+        filterParts.push(`hue-rotate(${filters.hueRotate}deg)`);
+    }
+    if (filters.sepia !== undefined && filters.sepia !== 0) {
+        filterParts.push(`sepia(${filters.sepia})`);
+    }
+    if (filters.blur !== undefined && filters.blur !== 0) {
+        filterParts.push(`blur(${filters.blur}px)`);
+    }
+    if (filters.grayscale !== undefined && filters.grayscale !== 0) {
+        filterParts.push(`grayscale(${filters.grayscale})`);
+    }
+    if (filters.invert !== undefined && filters.invert !== 0) {
+        filterParts.push(`invert(${filters.invert})`);
+    }
+
+    return filterParts.join(' ');
 }
 
 /**

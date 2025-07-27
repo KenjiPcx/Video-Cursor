@@ -207,4 +207,62 @@ export const createDraftNode = mutation({
 
         return nodeId;
     },
+});
+
+// Create a node from an existing asset
+export const createFromAsset = mutation({
+    args: {
+        projectId: v.id("projects"),
+        assetId: v.id("assets"),
+        assetType: v.union(v.literal("video"), v.literal("audio"), v.literal("image")),
+        position: v.optional(v.object({
+            x: v.number(),
+            y: v.number(),
+        })),
+    },
+    returns: v.id("nodes"),
+    handler: async (ctx, { projectId, assetId, assetType, position }) => {
+        // Get the asset to extract data
+        const asset = await ctx.db.get(assetId);
+        if (!asset) {
+            throw new Error("Asset not found");
+        }
+
+        // Get existing nodes to calculate position if not provided
+        const existingNodes = await ctx.db
+            .query("nodes")
+            .withIndex("by_project", (q) => q.eq("projectId", projectId))
+            .collect();
+
+        // Auto-position if not provided - place new nodes in a grid
+        const defaultPosition = position || {
+            x: 300 + ((existingNodes.length % 5) * 250), // 5 nodes per row
+            y: 100 + (Math.floor(existingNodes.length / 5) * 200), // New row every 5 nodes
+        };
+
+        // Determine node type based on asset type
+        const nodeType = assetType === "video" ? "videoAsset" :
+            assetType === "audio" ? "imageAsset" : // Audio nodes display as images for now
+                "imageAsset";
+
+        const nodeId = await ctx.db.insert("nodes", {
+            projectId,
+            type: nodeType,
+            position: defaultPosition,
+            data: {
+                assetId,
+                name: asset.name,
+                url: asset.url,
+                metadata: asset.metadata,
+                // Include generation metadata if this is a split/trimmed asset
+                ...(asset.metadata?.generationPrompt && {
+                    generationPrompt: asset.metadata.generationPrompt,
+                    generationModel: asset.metadata.generationModel,
+                    generationParams: asset.metadata.generationParams,
+                }),
+            },
+        });
+
+        return nodeId;
+    },
 }); 

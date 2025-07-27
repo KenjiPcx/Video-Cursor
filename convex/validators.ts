@@ -24,6 +24,7 @@ export const vAsset = v.object({
     ),
     url: v.string(), // R2 URL
     key: v.string(), // R2 key for file identification
+    description: v.optional(v.string()), // User-provided description for better AI context
     metadata: v.optional(v.object({
         duration: v.optional(v.number()),
         width: v.optional(v.number()),
@@ -40,6 +41,16 @@ export const vAsset = v.object({
             analyzedAt: v.optional(v.number()),
             analysisModel: v.optional(v.string()),
         })),
+        transcription: v.optional(v.object({
+            srt: v.string(),              // Full SRT format content
+            rawTranscription: v.any(),    // Raw Whisper API response
+            duration: v.number(),         // Audio duration from Whisper
+            transcribedAt: v.number(),    // Timestamp when transcribed
+            model: v.string(),           // "whisper-1"
+        })),
+        // Video splitting metadata
+        trimStart: v.optional(v.number()), // Start time for trimmed segments (seconds)
+        trimEnd: v.optional(v.number()),   // End time for trimmed segments (seconds)
     })),
 })
 
@@ -65,29 +76,77 @@ export const vStaticAsset = v.object({
     })),
 })
 
-// Timeline data structure for video editing
-export const vTimelineData = v.array(v.object({
-    type: v.union(v.literal("video"), v.literal("audio")),
-    main: v.boolean(), // Flag to indicate if this is the main timeline for the editor
-    items: v.array(v.object({
-        assetUrl: v.string(), // URL or reference to the asset
-        assetKey: v.optional(v.string()), // R2 key instead of asset ID
-        assetId: v.optional(v.id("assets")), // Optional reference to asset in our database
-        // Asset crop/trim times (what portion of the asset to use)
-        assetStartTime: v.number(), // Start time within the asset (in seconds)
-        assetEndTime: v.number(),   // End time within the asset (in seconds)
-        // Timeline placement (where this item sits on the timeline)
-        timelineStartTime: v.number(), // Start time on the timeline (in seconds)
-        timelineEndTime: v.number(),   // End time on the timeline (in seconds)
-        // Optional properties for editing
-        volume: v.optional(v.number()), // For audio tracks (0-1)
-        opacity: v.optional(v.number()), // For video tracks (0-1)
-        endTransition: v.optional(v.object({ // Only transition on the end of the asset
-            type: v.union(v.literal("fade"), v.literal("slide")),
-            duration: v.optional(v.number()),
-        })),
+// Timeline item structure
+export const vTimelineItem = v.object({
+    id: v.string(), // Unique timeline item ID
+    assetId: v.optional(v.string()), // Reference to original asset
+    type: v.union(v.literal("video"), v.literal("image"), v.literal("audio"), v.literal("draft")),
+    name: v.string(),
+    url: v.optional(v.string()),
+
+    // Absolute positioning on timeline (in seconds)
+    startTime: v.number(), // When item starts on timeline
+    endTime: v.number(),   // When item ends on timeline
+
+    // Asset portion to use (for trimming/cropping)
+    assetStartTime: v.number(), // Start time within the source asset
+    assetEndTime: v.number(),   // End time within the source asset
+
+    // Track assignment
+    trackId: v.string(),
+
+    // Metadata
+    metadata: v.optional(v.object({
+        width: v.optional(v.number()),
+        height: v.optional(v.number()),
+        size: v.optional(v.number()),
+        mimeType: v.optional(v.string()),
+        duration: v.optional(v.number()), // Original asset duration
     })),
-}))
+
+    // Overlay positioning (for video/image overlays)
+    overlay: v.optional(v.object({
+        x: v.number(),        // pixels from left edge
+        y: v.number(),        // pixels from top edge
+        width: v.number(),    // pixels wide
+        height: v.number(),   // pixels tall
+        zIndex: v.optional(v.number()),  // layer order
+    })),
+
+    // Audio/Visual properties
+    volume: v.optional(v.number()),   // 0.0 to 2.0 for audio
+    opacity: v.optional(v.number()),  // 0.0 to 1.0 for video/image transparency
+});
+
+// Timeline track structure
+export const vTimelineTrack = v.object({
+    id: v.string(),
+    type: v.union(v.literal("video"), v.literal("audio")),
+    name: v.string(), // "Video 1", "Audio 1", etc.
+    items: v.array(vTimelineItem),
+    muted: v.optional(v.boolean()),
+    locked: v.optional(v.boolean()),
+});
+
+// Composition filters structure
+export const vCompositionFilters = v.object({
+    contrast: v.optional(v.number()),    // 0.5 to 2.0
+    saturation: v.optional(v.number()),  // 0.0 to 3.0
+    brightness: v.optional(v.number()),  // 0.5 to 2.0
+    hueRotate: v.optional(v.number()),   // -180 to 180 degrees
+    sepia: v.optional(v.number()),       // 0.0 to 1.0
+    blur: v.optional(v.number()),        // 0 to 10 pixels
+    grayscale: v.optional(v.number()),   // 0.0 to 1.0
+    invert: v.optional(v.number()),      // 0.0 to 1.0
+});
+
+// Timeline data structure for video editing
+export const vTimelineData = v.object({
+    tracks: v.array(vTimelineTrack),
+    duration: v.number(), // Total timeline duration
+    timelineScale: v.number(), // Pixels per second for display
+    compositionFilters: v.optional(vCompositionFilters),
+})
 
 // Hidden context for projects (not exposed in public API)
 export const vHiddenProjectContext = v.object({

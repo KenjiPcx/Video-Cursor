@@ -211,6 +211,49 @@ export const scheduleRunwayCharacterControl = action({
     },
 });
 
+export const scheduleVideoBackgroundRemoval = action({
+    args: {
+        projectId: v.id("projects"),
+        sourceAssetId: v.string(),
+        sourceVideoUrl: v.string(),
+        assetType: v.union(v.literal("image"), v.literal("video")),
+        name: v.optional(v.string()),
+    },
+    handler: async (ctx, args) => {
+        const assetTypeText = args.assetType === "video" ? "Video" : "Image";
+        const name = args.name || `Background Removed ${assetTypeText} - ${new Date().toISOString()}`;
+
+        // Create loading node immediately for instant feedback
+        const nodeId = await ctx.runMutation(api.nodes.createGeneratingNode, {
+            projectId: args.projectId,
+            name,
+            expectedType: args.assetType,
+            generationModel: args.assetType === "video" ? "nateraw/video-background-remover" : "lucataco/remove-bg",
+            generationPrompt: `Remove background from ${args.assetType}: ${args.sourceAssetId}`,
+            generationParams: {
+                sourceAssetId: args.sourceAssetId,
+                sourceAssetUrl: args.sourceVideoUrl,
+                assetType: args.assetType,
+            },
+        });
+
+        // Schedule background generation
+        await ctx.scheduler.runAfter(0, internal.aiGeneration.generateVideoBackgroundRemoval, {
+            nodeId,
+            projectId: args.projectId,
+            sourceAssetId: args.sourceAssetId,
+            sourceAssetUrl: args.sourceVideoUrl,
+            assetType: args.assetType,
+            name,
+        });
+
+        return {
+            success: true,
+            message: `${assetTypeText} background removal started! The processed ${args.assetType} will appear in your assets when ready.`,
+        };
+    },
+});
+
 export const listFishAudioModels = action({
     args: {
         pageSize: v.optional(v.number()),
@@ -572,7 +615,7 @@ export const generateRunwayCharacterControl = internalAction({
                 }
 
                 taskResult = await statusResponse.json();
-                
+
                 if (taskResult.status === "SUCCEEDED") {
                     break;
                 } else if (taskResult.status === "FAILED") {
@@ -622,6 +665,80 @@ export const generateRunwayCharacterControl = internalAction({
             console.log(`Successfully generated Runway Character Control video for project ${args.projectId}, node ${args.nodeId}`);
         } catch (error) {
             console.error("Failed to generate Runway Character Control video:", error);
+            // TODO: Update node to error state
+        }
+    },
+});
+
+export const generateVideoBackgroundRemoval = internalAction({
+    args: {
+        nodeId: v.id("nodes"),
+        projectId: v.id("projects"),
+        sourceAssetId: v.string(),
+        sourceAssetUrl: v.string(),
+        assetType: v.union(v.literal("image"), v.literal("video")),
+        name: v.string(),
+    },
+    handler: async (ctx, args) => {
+        try {
+            console.log(`Starting ${args.assetType} background removal for project ${args.projectId}, node ${args.nodeId}`);
+
+            // Choose the appropriate Replicate model based on asset type
+            const model = args.assetType === "video"
+                ? "nateraw/video-background-remover:ac5c138171b04413a69222c304f67c135e259d46089fc70ef12da685b3c604aa"
+                : "lucataco/remove-bg:95fcc2a26d3899cd6c2691c900465aaeff466285a65c14638cc5f36f34befaf1";
+
+            const inputKey = args.assetType === "video" ? "video" : "image";
+
+            // Call Replicate API for background removal
+            const output = await replicate.run(model, {
+                input: {
+                    [inputKey]: args.sourceAssetUrl
+                }
+            });
+
+            // Get asset URL from output - could be string or object with URL
+            const assetUrl = typeof output === 'string' ? output : (output as any)?.url || output;
+            if (!assetUrl) {
+                throw new Error(`No ${args.assetType} URL returned from background removal model`);
+            }
+
+            // Download the processed asset
+            const response = await fetch(assetUrl);
+            if (!response.ok) {
+                throw new Error(`Failed to download background-removed ${args.assetType}: ${response.status}`);
+            }
+
+            // Determine MIME type based on asset type
+            const mimeType = args.assetType === "video" ? "video/mp4" : "image/png";
+
+            // Save to R2 and assets table
+            const result = await ctx.runAction(api.upload.store, {
+                category: "artifact",
+                filename: args.name,
+                mimeType,
+                bytes: await response.arrayBuffer(),
+                projectId: args.projectId,
+                generationPrompt: `Background removed from ${args.assetType}: ${args.sourceAssetId}`,
+                generationModel: model.split(":")[0], // Just the model name without version
+                generationParams: {
+                    sourceAssetId: args.sourceAssetId,
+                    sourceAssetUrl: args.sourceAssetUrl,
+                    assetType: args.assetType,
+                },
+            });
+
+            // Update the existing loading node to become a real asset node
+            await ctx.runMutation(api.nodes.updateGeneratingNodeToAsset, {
+                nodeId: args.nodeId,
+                assetId: result.assetId!,
+                assetUrl: result.url,
+                assetMetadata: result.metadata,
+            });
+
+            console.log(`Successfully removed background from ${args.assetType} for project ${args.projectId}, node ${args.nodeId}`);
+        } catch (error) {
+            console.error(`Failed to remove ${args.assetType} background:`, error);
             // TODO: Update node to error state
         }
     },

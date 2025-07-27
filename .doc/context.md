@@ -125,6 +125,82 @@ Text to editing
 - **Toggleable Timeline**: Bottom panel shows linear sequence
 - **Auto-positioning**: New nodes auto-arrange spatially
 
+### AI Timeline Editing Tools (✅ 7 TOOLS COMPLETED - FINAL)
+
+#### **1. LUT/Filter Tool** (✅ COMPLETED):
+- **Composition-level Filters**: Apply CSS filters to entire video composition
+- **Data Structure**: Added `CompositionFilters` interface to timeline data with support for:
+  - Contrast (0.5-2.0), Saturation (0.0-3.0), Brightness (0.5-2.0)
+  - Hue Rotate (-180-180°), Sepia (0.0-1.0), Blur (0-10px)
+  - Grayscale (0.0-1.0), Invert (0.0-1.0)
+- **Remotion Integration**: Filters applied to root `AbsoluteFill` component for real-time preview
+- **AI Tool**: `applyCompositionFilter` with preset support (cinematic, vintage, cool, warm, noir, dreamy)
+- **Backend**: `convex/timelineEditing.ts` with validation and error handling
+- **CSS Conversion**: Automatic conversion from filter object to CSS filter string
+
+#### **2. Place Asset Tool** (✅ COMPLETED):
+- **Generic Asset Placement**: Place any asset (video, audio, image) on timeline with precise control
+- **Data Structure**: Extended `TimelineItem` interface with overlay positioning and enhanced properties:
+  - Overlay positioning: x, y, width, height, zIndex (pixel-perfect positioning)
+  - Enhanced audio/visual: volume (0.0-2.0), opacity (0.0-1.0)
+  - Asset trimming: assetStartTime/assetEndTime for cropping source material
+- **Auto-Track Assignment**: Smart track assignment with conflict detection and auto-creation
+- **Remotion Integration**: Full overlay positioning support with absolute positioning
+- **AI Tool**: `placeAssetOnTimeline` with comprehensive validation and common use case examples
+- **Backend**: Complete mutation with conflict resolution, track management, and timeline duration updates
+
+#### **3. Target Modify Tool** (✅ COMPLETED):
+- **Comprehensive Asset Modification**: Modify any property of existing timeline assets
+- **Modification Capabilities**: Timeline positioning, overlay adjustments, audio/visual properties, asset trimming, track movement
+- **Smart Conflict Detection**: Prevents overlapping when moving assets between tracks
+- **Schema Upgrade**: Updated timeline data validators to comprehensive new structure with tracks, overlays, and filters
+- **AI Tool**: `modifyTimelineAsset` with detailed validation and use case guidance
+- **Backend**: Complete mutation with change tracking and detailed feedback messages
+
+#### **4. Extract Interesting Segments Tool** (✅ COMPLETED):
+- **AI-Powered Transcript Analysis**: Automatically identify engaging moments from video transcripts
+- **Intelligent Segmentation**: Uses LLM to analyze speech patterns, content quality, and engagement factors
+- **Customizable Criteria**: Filter for specific types of content (funny moments, key insights, emotional peaks)
+- **Engagement Scoring**: Ranks segments by interest level (1-10 scale) with detailed reasoning
+- **Smart Timing**: Configurable segment length (5-60s) with minimum gap detection to avoid overlaps
+- **AI Tool**: `extractInterestingSegments` with comprehensive analysis and structured output
+- **Data Requirements**: Requires video with transcription data (auto-generated via Whisper)
+
+#### **5. Split Video Asset Tool** (✅ COMPLETED):
+- **Efficient Video Splitting**: Create multiple trimmed clips from source video without file duplication
+- **Virtual Trimming**: New assets reference original file with trim metadata (trimStart/trimEnd)
+- **Batch Processing**: Split multiple segments simultaneously with automatic naming
+- **Node Integration**: Auto-creates editor nodes for easy drag-and-drop timeline placement
+- **Metadata Preservation**: Maintains original video metadata while adding trim and generation info
+- **AI Tool**: `splitVideoAsset` with validation and comprehensive segment management
+- **Schema Support**: Extended asset metadata with trimStart/trimEnd fields for split tracking
+
+#### **6. Reorder Timeline Tool** (✅ COMPLETED):
+- **Intelligent Clip Sequencing**: Reorder clips to improve story flow, pacing, and narrative structure
+- **Dual Reordering Modes**: 
+  - Within Track: Simple sequence changes on same track
+  - Across Tracks: Complex reorganization between different tracks
+- **Advanced Timing Options**:
+  - Maintain Original: Keep existing timing (may create overlaps/gaps)
+  - Sequential: Make clips play consecutively with no gaps
+  - Preserve Gaps: Sequential but maintain original spacing between clips
+- **Smart Conflict Detection**: Identifies and reports timing conflicts with resolution suggestions
+- **AI Tool**: `reorderTimelineAssets` with comprehensive validation and flow optimization guidance
+- **Backend**: Complete mutation with gap preservation, conflict resolution, and detailed change tracking
+
+#### **7. Background Removal Tool** (✅ COMPLETED - FINAL):
+- **Unified Image & Video Processing**: AI-powered background removal for both images and videos using specialized models
+- **Smart Model Selection**: Automatically chooses appropriate Replicate model based on asset type:
+  - Images: `lucataco/remove-bg` for high-quality image background removal
+  - Videos: `nateraw/video-background-remover` for video background isolation
+- **Professional Output**: Creates assets with removed/transparent backgrounds perfect for overlays and compositing
+- **Subject Preservation**: AI intelligently preserves main subjects (people, objects) while removing backgrounds
+- **Versatile Use Cases**: Perfect for both static graphics and dynamic video content
+- **AI Tool**: `removeBackground` with unified interface for images and videos
+- **Fire-and-Forget Architecture**: Instant loading node creation with background processing and automatic asset updates
+
+🎬 **COMPLETE AI VIDEO EDITOR**: All 7 core video editing tools implemented for professional video production workflows!
+
 ### Next Steps  
 1. ✅ **Asset Upload**: Implemented Cloudflare R2 upload with project association
 2. ✅ **Project Management**: Projects now linked to chat threads (1:1 relationship)
@@ -135,10 +211,21 @@ Text to editing
 7. ✅ **Editor Refactoring**: Split 716-line component into modular pieces (Phase 1 & 2 complete)
 8. ✅ **Enhanced Timeline Display**: Show actual assets with previews, duration, and proper sequencing  
 9. ✅ **Remotion Integration**: Create composition and player for timeline rendering
-10. **Timeline Editing**: Add drag-and-drop, trimming, and gap management (NEXT)
-11. **Asset-Scene Linking**: Connect real assets to draft scenes
+10. ✅ **LUT/Filter Tool**: Apply composition-level filters with presets and real-time preview
+11. ✅ **Place Asset Tool**: Generic asset placement with overlay positioning, auto-track assignment, and trimming
+12. ✅ **Target Modify Tool**: Modify existing timeline asset properties with smart conflict detection
+13. ✅ **Reorder Tool**: Intelligent clip sequencing with dual modes and advanced timing options
+14. ✅ **AI Video Editing Tools**: Complete professional video editing toolkit with 6 core tools
+15. **Timeline UI**: Add drag-and-drop, trimming, and gap management (NEXT)
+16. **Asset-Scene Linking**: Connect real assets to draft scenes
 
 ### Recent Completions (✅)
+- **Asset Library Implementation**: Created floating panel system for asset management
+  - **Floating Panel Design**: Toggleable panel in left-center area (320px wide, max 70vh height)
+  - **Visual Asset Cards**: Thumbnail previews, metadata display, search functionality
+  - **Asset Descriptions**: Added description field with inline editing for better AI context
+  - **Drag & Drop Integration**: Assets draggable from library to canvas with automatic node creation
+  - **Panel Controls**: Toggle button and close button with proper positioning and styling
 - **R2 Integration**: Files upload to Cloudflare R2 and store metadata in assets table
 - **Project-Thread Linking**: Each project has a dedicated chat thread
 - **Upload Flow**: MultimodalInput now uploads files to project-specific storage
@@ -289,67 +376,42 @@ Text to editing
     - Video-specific UI hints and instructions
     - Wider modal (max-w-4xl) for better video viewing experience
   - **Seamless Integration**: Both node preview and modal player work together cohesively
-
-### Recent Updates (✅ ARCHITECTURE COMPLETE)
-- **Decoupled Node-Asset Architecture** (✅ Complete):
-  - **Clean Separation**: Assets are pure file records, nodes are UI/graph elements only
-  - **Simplified Upload**: `upload.store` always just creates assets with consistent return type
-  - **Explicit Node Creation**: New `nodes.createFromAsset` helper for when nodes are needed
-  - **Removed Complexity**: Eliminated `storeWithoutNode`, `createWithoutNode` variants
-  
-- **Enhanced Loading Node System** (✅ Complete):
-  - Added `"generatingAsset"` node type for immediate loading feedback
-  - AI generation creates loading nodes instantly, then updates them when complete
-  - **New Functions**:
-    - `nodes.createGeneratingNode` - creates loading node with generation metadata
-    - `nodes.updateGeneratingNodeToAsset` - updates loading node to final asset node  
-    - `nodes.createFromAsset` - explicit node creation from existing assets
-  
-- **Updated AI Generation Flow** (✅ Complete):
-  1. **Schedule** → **Loading node appears instantly** → **Node updates when done**
-  2. All 4 AI tools use loading pattern (Runway, Flux, Hailuo, Fish Audio)
-  3. Clean asset creation without auto-node complexity
-  
-- **Ready for Testing**: Decoupling complete! All linter errors resolved. Push changes to regenerate Convex API types, then test improved UX.
-
-## Development Commands
-
-### Development workflow
-Always design and propose your solution first, talking about the different ways to implement, their pros and cons, or ask clarifying questions to get my confirmation before proceeding
-
-Never call the run commands to build and dev the app, let me do that myself
-
-### Convex tips
-Never use the return field for queries, actions or mutations
-
-### Development Server
-```bash
-npm run dev          # Start both frontend and backend in parallel
-npm run dev:frontend # Start Next.js frontend only
-npm run dev:backend  # Start Convex backend only
-```
-
-### Build and Deploy
-```bash
-npm run build  # Build Next.js app for production
-npm run start  # Start production server
-npm run lint   # Run ESLint
-```
-
-### Setup
-```bash
-npm install    # Install dependencies
-npm run predev # Initialize Convex, run setup script, open dashboard
-```
-
-### Environment Variables
-Required for AI asset generation:
-```bash
-# Add to .env.local or Convex dashboard
-REPLICATE_API_TOKEN=your_replicate_token_here
-FISH_AUDIO_API_KEY=your_fish_audio_key_here
-```
-
-Get API keys from:
-- [Replicate](https://replicate.com/account/api-tokens) for image/video generation
-- [Fish Audio](https://docs.fish.audio/api-reference/endpoint/openapi-v1/text-to-speech) for voice generation
+- **Video Transcription & AI Segment Extraction** (✅):
+  - **OpenAI Whisper Integration**: Automatic video transcription with 5-second SRT caption groupings
+    - Parallel processing: Visual analysis (Gemini) + transcription (Whisper) run simultaneously
+    - Industry-standard SRT format with proper timing (`HH:MM:SS,mmm`)
+    - Complete data storage: Raw Whisper response + formatted SRT in asset metadata
+    - Extended schema: Added `transcription` field with srt, duration, model, timestamps
+  - **AI-Powered Segment Analysis**: Extract interesting moments using transcript analysis
+    - LLM analyzes speech patterns, content quality, engagement factors
+    - Configurable criteria: Funny moments, key insights, emotional peaks, action sequences
+    - Engagement scoring (1-10 scale) with detailed reasoning for each segment
+    - Smart timing: Customizable segment length (5-60s) with minimum gap detection
+  - **Efficient Video Splitting**: Create trimmed clips without file duplication
+    - Virtual trimming: New assets reference original file with trim metadata
+    - Batch processing: Split multiple segments simultaneously with automatic naming
+    - Node integration: Auto-creates editor nodes for easy timeline placement
+    - Metadata preservation: Maintains original properties while adding trim/generation info
+  - **Complete Workflow**: Upload video → Auto-transcribe → Analyze segments → Split clips → Place on timeline
+    - Two new AI tools: `extractInterestingSegments` and `splitVideoAsset`
+    - Schema support: Extended metadata with `trimStart`/`trimEnd` fields
+    - Environment requirement: `OPENAI_API_KEY` for Whisper transcription
+- **AI Background Removal** (✅):
+  - **Unified Image & Video Processing**: AI-powered background removal for both images and videos using specialized models
+    - Images: Uses `lucataco/remove-bg` for high-quality image background removal  
+    - Videos: Uses `nateraw/video-background-remover` for video background isolation
+    - Smart model selection automatically chooses appropriate tool based on asset type
+    - Fire-and-forget architecture with instant loading feedback and background processing
+  - **Professional Output Quality**: Creates clean assets with transparent backgrounds
+    - Automatically detects and removes backgrounds while preserving main subjects
+    - Perfect for overlays, compositing, and green screen effects
+    - Maintains original asset quality with professional results
+  - **Seamless Integration**: Works with any image or video asset through unified interface
+    - Single tool handles both image and video background removal
+    - Auto-creates editor nodes for easy timeline placement
+    - Maintains full metadata and generation tracking for asset management
+  - **Versatile Use Cases**: Essential for modern content creation workflows
+    - Create overlay graphics and videos for presentations and social media
+    - Prepare assets for advanced compositing workflows
+    - Generate transparent elements for tutorials and marketing content
+    - Build professional content elements without green screen equipment

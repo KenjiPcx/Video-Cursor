@@ -26,17 +26,17 @@ export function TimelinePreviewModal({
     edges,
 }: TimelinePreviewModalProps) {
 
-        const timelineProps: z.infer<typeof TimelineCompositionSchema> | null = useMemo(() => {
+    const timelineProps: z.infer<typeof TimelineCompositionSchema> | null = useMemo(() => {
         try {
             // Get timeline data from graph (same logic as timeline panel)
             const timelineData = populateTimelineFromGraph(nodes, edges);
-            
+
             // Check if we have any items to preview
             const hasItems = timelineData.tracks.some(track => track.items.length > 0);
             if (!hasItems || timelineData.duration === 0) {
                 return null;
             }
-            
+
             return {
                 timelineData,
                 backgroundColor: '#1a1a1a',
@@ -60,11 +60,11 @@ export function TimelinePreviewModal({
     if (!timelineProps) {
         return (
             <Dialog open={isOpen} onOpenChange={onClose}>
-                <DialogContent className="max-w-4xl">
+                <DialogContent className="min-w-[85vw] max-w-[85vw] max-w-6xl w-[90vw] h-[80vh] max-h-none">
                     <DialogHeader>
                         <DialogTitle>Timeline Preview</DialogTitle>
                     </DialogHeader>
-                    <div className="aspect-video w-full h-96 flex items-center justify-center bg-zinc-900 rounded-lg">
+                    <div className="flex-1 flex items-center justify-center bg-zinc-900 rounded-lg">
                         <div className="text-center text-zinc-400">
                             <p className="text-lg font-medium">No timeline content to preview</p>
                             <p className="text-sm mt-1">Add some assets to your timeline and connect them to the starting node.</p>
@@ -77,28 +77,33 @@ export function TimelinePreviewModal({
 
     return (
         <Dialog open={isOpen} onOpenChange={onClose}>
-            <DialogContent className="max-w-4xl">
+            <DialogContent className="min-w-[85vw] max-w-[85vw] max-w-6xl w-[90vw] h-[80vh] max-h-none">
                 <DialogHeader>
                     <DialogTitle>Timeline Preview</DialogTitle>
                 </DialogHeader>
-                <div className="aspect-video">
-                    <Player
-                        component={TimelineComposition}
-                        inputProps={timelineProps}
-                        durationInFrames={durationInFrames}
-                        fps={fps}
-                        compositionHeight={videoHeight}
-                        compositionWidth={videoWidth}
-                        style={{
-                            width: "100%",
-                            height: "100%",
-                        }}
-                        controls
-                        autoPlay={false}
-                        loop={false}
-                    />
+                <div className="flex-1 min-h-0 flex items-center justify-center">
+                    <div className="w-full h-full max-h-full" style={{ aspectRatio: '16/9' }}>
+                        <Player
+                            component={TimelineComposition}
+                            inputProps={timelineProps}
+                            durationInFrames={durationInFrames}
+                            fps={fps}
+                            compositionHeight={videoHeight}
+                            compositionWidth={videoWidth}
+                            style={{
+                                width: "100%",
+                                height: "100%",
+                                maxWidth: "100%",
+                                maxHeight: "100%",
+                                objectFit: "contain"
+                            }}
+                            controls
+                            autoPlay={false}
+                            loop={false}
+                        />
+                    </div>
                 </div>
-                <div className="mt-4 text-sm text-zinc-400">
+                <div className="mt-4 text-sm text-zinc-400 flex-shrink-0">
                     <p>Duration: {Math.round(timelineProps.timelineData.duration)}s • Tracks: {timelineProps.timelineData.tracks.length} • Resolution: {videoWidth}x{videoHeight}</p>
                 </div>
             </DialogContent>

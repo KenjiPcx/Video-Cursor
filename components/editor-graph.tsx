@@ -24,10 +24,11 @@ import { CustomEdge } from './edges/custom-edge';
 import { TimelinePanel } from './timeline/timeline-panel';
 import { UploadOverlay } from './upload/upload-overlay';
 import { AssetDetailsPanel } from './asset-details-panel';
+import { AssetLibrary } from './asset-library';
 import { useEditorState } from '../hooks/use-editor-state';
 import { useFileUpload } from '../hooks/use-file-upload';
 import { Button } from './ui/button';
-import { ChevronUp, ChevronDown, Upload, RefreshCw } from 'lucide-react';
+import { ChevronUp, ChevronDown, Upload, RefreshCw, Library } from 'lucide-react';
 
 import '@xyflow/react/dist/style.css';
 import { Id } from '@/convex/_generated/dataModel';
@@ -48,6 +49,7 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
     const [hoveredNode, setHoveredNode] = useState<string | null>(null);
     const [showTimeline, setShowTimeline] = useState(false);
     const [showUpload, setShowUpload] = useState(false);
+    const [showAssetLibrary, setShowAssetLibrary] = useState(false);
 
     // Asset details panel state
     const [assetDetailsPanel, setAssetDetailsPanel] = useState<{
@@ -202,6 +204,25 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
         flowEdges,
     });
 
+    // Handle asset drop from library to canvas
+    const handleAssetDrop = useCallback(async (assetId: Id<"assets">, position: { x: number, y: number }) => {
+        try {
+            // Find the asset to determine its type
+            const asset = projectAssets?.find(a => a._id === assetId);
+            if (!asset) return;
+
+            // Create node based on asset type
+            await createNode({
+                projectId,
+                type: asset.type === "video" ? "videoAsset" : asset.type === "image" ? "imageAsset" : "draft",
+                position,
+                data: { assetId }
+            });
+        } catch (error) {
+            console.error("Failed to create node from asset:", error);
+        }
+    }, [createNode, projectId, projectAssets]);
+
     // Memoize node and edge types to prevent React Flow re-renders
     const nodeTypes: NodeTypes = useMemo(() => ({
         starting: (props) => (
@@ -284,6 +305,31 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
         }
     }, [refreshUrls, projectId, refreshing]);
 
+    // Handle drag and drop on canvas
+    const onDragOver = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'copy';
+    }, []);
+
+    const onDrop = useCallback((event: React.DragEvent) => {
+        event.preventDefault();
+
+        try {
+            const data = JSON.parse(event.dataTransfer.getData('application/json'));
+            if (data.type === 'asset' && data.assetId) {
+                // Get the drop position relative to the canvas
+                const reactFlowBounds = event.currentTarget.getBoundingClientRect();
+                const position = {
+                    x: event.clientX - reactFlowBounds.left,
+                    y: event.clientY - reactFlowBounds.top,
+                };
+
+                handleAssetDrop(data.assetId, position);
+            }
+        } catch (error) {
+            console.error('Failed to parse drop data:', error);
+        }
+    }, [handleAssetDrop]);
 
     if (!projectData) {
         return (
@@ -370,6 +416,8 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
                 onNodeMouseEnter={handleNodeMouseEnter}
                 onNodeMouseLeave={handleNodeMouseLeave}
                 onConnect={onConnect}
+                onDrop={onDrop}
+                onDragOver={onDragOver}
                 nodeTypes={nodeTypes}
                 edgeTypes={edgeTypes}
                 fitView
@@ -441,6 +489,15 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
                         <Button
                             size="sm"
                             variant="outline"
+                            onClick={() => setShowAssetLibrary(!showAssetLibrary)}
+                            className="bg-zinc-900/80 border-zinc-700 text-white"
+                        >
+                            <Library className="h-4 w-4" />
+                            Assets
+                        </Button>
+                        <Button
+                            size="sm"
+                            variant="outline"
                             onClick={() => setShowTimeline(!showTimeline)}
                             className="bg-zinc-900/80 border-zinc-700 text-white"
                         >
@@ -484,6 +541,19 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
                     setShowUpload(false);
                 }}
             />
+
+            {/* Asset Library Panel */}
+            {showAssetLibrary && (
+                <div className="absolute left-4 top-1/2 transform -translate-y-1/2 z-50">
+                    <div className="bg-zinc-900/95 border border-zinc-700 rounded-lg shadow-xl max-h-[70vh] w-80">
+                        <AssetLibrary
+                            projectId={projectId}
+                            onAssetDrop={handleAssetDrop}
+                            onClose={() => setShowAssetLibrary(false)}
+                        />
+                    </div>
+                </div>
+            )}
 
             {/* Timeline Component */}
             <TimelinePanel

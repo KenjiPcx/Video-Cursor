@@ -1,6 +1,7 @@
 import { AbsoluteFill, useVideoConfig, Sequence, Img, CalculateMetadataFunction, Audio, OffthreadVideo, useCurrentFrame } from 'remotion';
 import { z } from 'zod';
 import React from 'react';
+import { filtersToCSS } from '../components/timeline/timeline-utils';
 
 // Define the timeline data schema matching our timeline-utils
 export const TimelineItemSchema = z.object({
@@ -21,8 +22,17 @@ export const TimelineItemSchema = z.object({
         mimeType: z.string().optional(),
         duration: z.number().optional(),
     }).optional(),
-    volume: z.number().optional(),
-    opacity: z.number().optional(),
+    // Overlay positioning (for video/image overlays)
+    overlay: z.object({
+        x: z.number(),        // pixels from left edge
+        y: z.number(),        // pixels from top edge
+        width: z.number(),    // pixels wide
+        height: z.number(),   // pixels tall
+        zIndex: z.number().optional(),  // layer order
+    }).optional(),
+    // Audio/Visual properties
+    volume: z.number().optional(),   // 0.0 to 2.0 for audio
+    opacity: z.number().optional(),  // 0.0 to 1.0 for video/image transparency
 });
 
 export const TimelineTrackSchema = z.object({
@@ -35,10 +45,23 @@ export const TimelineTrackSchema = z.object({
     volume: z.number().optional(), // Track-level volume
 });
 
+// Enhanced composition filters schema
+const CompositionFiltersSchema = z.object({
+    contrast: z.number().min(0.5).max(2.0).optional(),
+    saturation: z.number().min(0.0).max(3.0).optional(),
+    brightness: z.number().min(0.5).max(2.0).optional(),
+    hueRotate: z.number().min(-180).max(180).optional(),
+    sepia: z.number().min(0.0).max(1.0).optional(),
+    blur: z.number().min(0).max(10).optional(),
+    grayscale: z.number().min(0.0).max(1.0).optional(),
+    invert: z.number().min(0.0).max(1.0).optional(),
+}).optional();
+
 export const TimelineDataSchema = z.object({
     tracks: z.array(TimelineTrackSchema),
     duration: z.number(), // in seconds
     timelineScale: z.number(), // pixels per second
+    compositionFilters: CompositionFiltersSchema,
 });
 
 // Enhanced schema for composition props with real editing features
@@ -56,6 +79,7 @@ export const TimelineCompositionSchema = z.object({
 export type TimelineCompositionProps = z.infer<typeof TimelineCompositionSchema>;
 export type TimelineItem = z.infer<typeof TimelineItemSchema>;
 export type TimelineTrack = z.infer<typeof TimelineTrackSchema>;
+export type TimelineData = z.infer<typeof TimelineDataSchema>;
 
 // Calculate metadata based on timeline duration
 export const calculateTimelineMetadata: CalculateMetadataFunction<TimelineCompositionProps> = async ({ props }) => {
@@ -142,13 +166,31 @@ function TimelineLayer({
         return null;
     }
 
-    const layerStyle = {
+    // Handle overlay positioning vs full-frame rendering
+    const isOverlay = !!item.overlay;
+
+    const layerStyle = isOverlay ? {
+        // Overlay positioning
+        position: 'absolute' as const,
+        left: item.overlay!.x,
+        top: item.overlay!.y,
+        width: item.overlay!.width,
+        height: item.overlay!.height,
+        opacity: item.opacity ?? 1,
+        zIndex: item.overlay!.zIndex ?? getLayerZIndex(item, item.trackId),
+    } : {
+        // Full-frame rendering
         opacity: item.opacity ?? 1,
         zIndex: getLayerZIndex(item, item.trackId),
     };
 
     // Adjust media quality based on render settings
-    const mediaStyle = {
+    const mediaStyle = isOverlay ? {
+        width: '100%',
+        height: '100%',
+        objectFit: 'cover' as const,
+        imageRendering: renderQuality === 'draft' ? 'pixelated' as const : 'auto' as const,
+    } : {
         width: '100%',
         height: '100%',
         objectFit: 'cover' as const,
@@ -225,6 +267,9 @@ export const TimelineComposition: React.FC<TimelineCompositionProps> = ({
     const { fps } = useVideoConfig();
     const currentFrame = useCurrentFrame();
 
+    // Generate CSS filter string from composition filters
+    const compositionFilterCSS = filtersToCSS(timelineData?.compositionFilters);
+
     if (!timelineData || timelineData.tracks.length === 0) {
         return (
             <AbsoluteFill style={{
@@ -233,7 +278,8 @@ export const TimelineComposition: React.FC<TimelineCompositionProps> = ({
                 alignItems: 'center',
                 justifyContent: 'center',
                 color: 'white',
-                fontSize: '32px'
+                fontSize: '32px',
+                filter: compositionFilterCSS || undefined,
             }}>
                 No timeline data available
             </AbsoluteFill>
@@ -253,7 +299,10 @@ export const TimelineComposition: React.FC<TimelineCompositionProps> = ({
     }
 
     return (
-        <AbsoluteFill style={{ backgroundColor }}>
+        <AbsoluteFill style={{
+            backgroundColor,
+            filter: compositionFilterCSS || undefined,
+        }}>
             {/* Background layer (zIndex: -1) */}
             {backgroundUrl && (
                 <Sequence from={0} layout="none">

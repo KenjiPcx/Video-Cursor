@@ -22,6 +22,7 @@ import type * as projects from "../projects.js";
 import type * as staticAssets from "../staticAssets.js";
 import type * as threadMetadata from "../threadMetadata.js";
 import type * as threadTitles from "../threadTitles.js";
+import type * as timelineEditing from "../timelineEditing.js";
 import type * as upload from "../upload.js";
 import type * as validators from "../validators.js";
 
@@ -54,6 +55,7 @@ declare const fullApi: ApiFromModules<{
   staticAssets: typeof staticAssets;
   threadMetadata: typeof threadMetadata;
   threadTitles: typeof threadTitles;
+  timelineEditing: typeof timelineEditing;
   upload: typeof upload;
   validators: typeof validators;
 }>;
