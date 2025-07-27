@@ -1,14 +1,16 @@
 import { v } from "convex/values";
-import { mutation, httpAction, internalAction, query, action, internalMutation } from "./_generated/server";
-import { components, internal } from "./_generated/api";
-import { lifeCopilotAgent } from "./agents";
+import { mutation, httpAction, query, action, internalMutation } from "./_generated/server";
+import { api, components } from "./_generated/api";
+import { videoEditingAgent } from "./agents";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { paginationOptsValidator } from "convex/server";
-import { vStreamArgs } from "@convex-dev/agent";
+import { createTool, vStreamArgs } from "@convex-dev/agent";
 import { Attachment, UIMessage } from "ai";
 import { vAttachment } from "./validators";
 import { Doc, Id } from "./_generated/dataModel";
 import dedent from "dedent";
+import { createDraftScene, ToolCtx } from "./agentTools";
+import { z } from "zod";
 
 // Create a new thread
 export const createThread = mutation({
@@ -21,15 +23,15 @@ export const createThread = mutation({
         if (!userId) throw new Error("Not authenticated");
 
         // Create thread with user association
-        const { threadId } = await lifeCopilotAgent.createThread(ctx, {
+        const { threadId } = await videoEditingAgent.createThread(ctx, {
             userId: userId,
         });
 
         // Link thread to project
-        await ctx.runMutation(internal.threadMetadata.linkThreadToProject, {
+        await ctx.runMutation(api.threadMetadata.linkThreadToProject, {
             projectId,
             threadId,
-            makeActive: true
+            title: "New Thread"
         });
 
         return { threadId };
@@ -114,19 +116,15 @@ export const chat = httpAction(async (ctx, request) => {
 
     const { message, threadId, projectId, attachments, timelineData } = await request.json() as ChatRequest;
 
-    console.log({ message, threadId }, attachments?.length, projectId);
-
     // Continue the thread with the agent
-    const { thread } = await lifeCopilotAgent.continueThread(ctx, {
+    const { thread } = await videoEditingAgent.continueThread(ctx, {
         threadId,
         userId
     });
 
     const systemPrompt = dedent`
         # Role
-        You are a helpful assistant that can help with video editing and creation.
-        You are given a message and a list of attachments.
-        You can use the attachments to help you edit the video.
+        You are a Video Cursor AI assistant that helps users create and edit videos.
         
         # Instructions
         Use the tools to fulfill the user's request.
@@ -138,11 +136,12 @@ export const chat = httpAction(async (ctx, request) => {
 
         # Timeline
         - The assets are arranged in a timeline just like a normal video editor, you have array of timelines which could be audio or video or text.
-        - Each timeline has a list of assets, each asset has a start and end time relative to the overall timeline and also a start and end time relative to the - assets themselves.
+        - Each timeline has a list of assets, each asset has a start and end time relative to the overall timeline and also a start and end time relative to the assets themselves.
         - The timeline with the highest index has the highest z index
-
+        
         # Context
         You are given the following context:
+        - Current Project ID: ${projectId}
         - Assets uploaded and a description of the assets or with their summary:
         ${JSON.stringify(attachments)}
         - The actual timeline itself of the entire video:
@@ -152,6 +151,13 @@ export const chat = httpAction(async (ctx, request) => {
         Using these context, you should comply with the user's request.
     `
 
+    const toolProps: ToolCtx = {
+        ctx,
+        threadId,
+        userId,
+        projectId: projectId as Id<"projects">,
+    }
+
     // Stream the response
     const result = await thread.streamText({
         system: systemPrompt,
@@ -160,10 +166,11 @@ export const chat = httpAction(async (ctx, request) => {
             content: convertAttachmentsToContent(attachments, message.content)
         }],
         maxSteps: 20,
-        // experimental_activeTools: () => {
-        //     // DO rag here to determine which tools to use
-        //     return ["editVideo", "stitchVideo"];
-        // }
+        tools: {
+            createDraftScene: createDraftScene(toolProps),
+        },
+        toolCallStreaming: true,
+        toolChoice: "auto",
     });
 
     const response = result.toDataStreamResponse();
@@ -196,29 +203,6 @@ export const deleteThread = action({
     },
 });
 
-export const sendMessageHttpStream = httpAction(async (ctx, request) => {
-    console.log("Sending message", request);
-    const {
-        message,
-        id: threadId,
-    } = await request.json();
-
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    // TODO: Add tools to plan and schedule a handoff
-    const { thread } = await lifeCopilotAgent.continueThread(ctx, {
-        threadId,
-        userId,
-    });
-
-    const result = await thread.streamText({ messages: [message] });
-
-    const response = result.toDataStreamResponse();
-    response.headers.set("Message-Id", result.messageId);
-    return response;
-});
-
 /**
  * Query & subscribe to messages & threads
  */
@@ -234,11 +218,11 @@ export const listThreadMessages = query({
         if (!userId) throw new Error("Not authenticated");
 
         const { threadId, paginationOpts, streamArgs } = args;
-        const streams = await lifeCopilotAgent.syncStreams(ctx, { threadId, streamArgs });
+        const streams = await videoEditingAgent.syncStreams(ctx, { threadId, streamArgs });
         // Here you could filter out / modify the stream of deltas / filter out
         // deltas.
 
-        const paginated = await lifeCopilotAgent.listMessages(ctx, {
+        const paginated = await videoEditingAgent.listMessages(ctx, {
             threadId,
             paginationOpts,
         });

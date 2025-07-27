@@ -10,11 +10,14 @@
 
 import type * as agentTools from "../agentTools.js";
 import type * as agents from "../agents.js";
+import type * as aiGeneration from "../aiGeneration.js";
 import type * as assets from "../assets.js";
 import type * as auth from "../auth.js";
 import type * as chat from "../chat.js";
+import type * as edges from "../edges.js";
 import type * as embeddings from "../embeddings.js";
 import type * as http from "../http.js";
+import type * as nodes from "../nodes.js";
 import type * as projects from "../projects.js";
 import type * as staticAssets from "../staticAssets.js";
 import type * as threadMetadata from "../threadMetadata.js";
@@ -39,11 +42,14 @@ import type {
 declare const fullApi: ApiFromModules<{
   agentTools: typeof agentTools;
   agents: typeof agents;
+  aiGeneration: typeof aiGeneration;
   assets: typeof assets;
   auth: typeof auth;
   chat: typeof chat;
+  edges: typeof edges;
   embeddings: typeof embeddings;
   http: typeof http;
+  nodes: typeof nodes;
   projects: typeof projects;
   staticAssets: typeof staticAssets;
   threadMetadata: typeof threadMetadata;

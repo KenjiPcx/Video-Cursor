@@ -141,6 +141,7 @@ function PureMultimodalInput({
       const bytes = await file.arrayBuffer();
 
       const result = await uploadFileAction({
+        category: "upload",
         filename: file.name,
         mimeType: file.type,
         bytes,

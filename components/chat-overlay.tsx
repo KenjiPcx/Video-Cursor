@@ -7,7 +7,7 @@ import { useAuthToken } from "@convex-dev/auth/react";
 import { useChat } from '@ai-sdk/react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { api } from '../convex/_generated/api';
-import { LifeGraph } from './life-graph';
+import { EditorGraph } from './editor-graph';
 import { Button } from './ui/button';
 import { Sparkles, Plus } from 'lucide-react';
 import { Attachment } from 'ai';
@@ -15,6 +15,7 @@ import { MultimodalInput } from './chat/multimodal-input';
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from './ui/select';
 import { Id } from '@/convex/_generated/dataModel';
 import { ProjectCreationModal } from './project-creation-modal';
+import { Message, ThinkingMessage } from './chat/message';
 
 export function ChatOverlay() {
     const { isAuthenticated, isLoading } = useConvexAuth();
@@ -23,7 +24,7 @@ export function ChatOverlay() {
 
     const [attachments, setAttachments] = useState<Array<Attachment>>([]);
     const [currentThreadId, setCurrentThreadId] = useState<string | undefined>();
-    const [currentProjectId, setCurrentProjectId] = useState<string | undefined>();
+    const [currentProjectId, setCurrentProjectId] = useState<Id<"projects"> | undefined>();
     const [isCreatingThread, setIsCreatingThread] = useState(false);
     const [isCreatingProject, setIsCreatingProject] = useState(false);
     const [selectedNode, setSelectedNode] = useState<string | null>(null);
@@ -65,11 +66,12 @@ export function ChatOverlay() {
         if (currentProjectId && projectThreads && projectThreads.length > 0) {
             const mostRecentThread = projectThreads[0]; // threads are ordered by creation time
 
-            if (mostRecentThread && mostRecentThread.threadId !== currentThreadId) {
+            // Only auto-select if no thread is currently selected
+            if (mostRecentThread && !currentThreadId) {
                 setCurrentThreadId(mostRecentThread.threadId);
             }
         }
-    }, [currentProjectId, projectThreads, currentThreadId]);
+    }, [currentProjectId, projectThreads]);
 
     // Check for first-time user and show onboarding
     useEffect(() => {
@@ -257,7 +259,7 @@ export function ChatOverlay() {
                     {/* Project Selector */}
                     <Select
                         value={currentProjectId}
-                        onValueChange={(value) => setCurrentProjectId(value)}
+                        onValueChange={(value) => setCurrentProjectId(value as Id<"projects">)}
                     >
                         <SelectTrigger className="w-[200px] bg-background/80 dark:bg-zinc-900/80 backdrop-blur-lg border-white/10">
                             <SelectValue placeholder="Select a project..." />
@@ -345,33 +347,35 @@ export function ChatOverlay() {
 
             {/* Floating Assistant Message */}
             <AnimatePresence>
-                {showAssistantMessage && lastMessage?.role === 'assistant' && (
-                    <motion.div
-                        key={lastMessage.id}
-                        initial={{ opacity: 0, y: -20 }}
-                        animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -20, transition: { duration: 0.3 } }}
-                        transition={{ duration: 0.5, ease: 'easeOut' }}
-                        className="absolute left-0 right-0 p-4 flex justify-center z-10"
-                    >
-                        <div className="max-w-2xl w-full bg-background/80 dark:bg-zinc-900/80 backdrop-blur-lg border border-white/10 rounded-lg shadow-lg max-h-80 overflow-y-auto">
-                            <div className="flex gap-4 p-4">
-                                <div className="size-8 flex items-center rounded-full justify-center ring-1 shrink-0 ring-border bg-background">
-                                    <Sparkles className="h-4 w-4" />
-                                </div>
-                                <div className="flex flex-col gap-2 w-full">
-                                    <span className="text-sm font-semibold capitalize">Video Cursor</span>
-                                    <p className="text-foreground whitespace-pre-line">{lastMessage.content}</p>
-                                </div>
+                {((status === 'submitted' && messages.length > 0 && messages[messages.length - 1].role === 'user') ||
+                    (showAssistantMessage && lastMessage?.role === 'assistant')) && (
+                        <motion.div
+                            key={lastMessage?.id || 'thinking'}
+                            initial={{ opacity: 0, y: -20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20, transition: { duration: 0.3 } }}
+                            transition={{ duration: 0.5, ease: 'easeOut' }}
+                            className="absolute left-0 right-0 p-4 flex justify-center z-10"
+                        >
+                            <div className="max-w-2xl w-full bg-zinc-900/80 backdrop-blur-lg border border-zinc-700 rounded-lg shadow-lg max-h-80 overflow-y-auto">
+                                {status === 'submitted' && messages.length > 0 && messages[messages.length - 1].role === 'user' ? (
+                                    <ThinkingMessage />
+                                ) : lastMessage && (
+                                    <Message
+                                        message={lastMessage}
+                                        isLoading={status === 'streaming'}
+                                        isLatestMessage={true}
+                                    />
+                                )}
                             </div>
-                        </div>
-                    </motion.div>
-                )}
+                        </motion.div>
+                    )}
             </AnimatePresence>
 
-            {/* Life Graph Background */}
-            <LifeGraph
+            {/* Editor Graph Background */}
+            <EditorGraph
                 threadId={currentThreadId}
+                projectId={currentProjectId}
                 onNodeSelect={handleNodeSelect}
                 highlightedNodes={highlightedNodes}
                 selectedNode={selectedNode}

@@ -16,6 +16,26 @@ export default defineSchema({
     .index("by_tags", ["tags"])
     .index("by_key", ["key"]),
 
+  // Video editor graph nodes
+  nodes: defineTable({
+    projectId: v.id("projects"),
+    type: v.union(v.literal("starting"), v.literal("draft"), v.literal("videoAsset"), v.literal("imageAsset"), v.literal("generatingAsset")),
+    position: v.object({
+      x: v.number(),
+      y: v.number(),
+    }),
+    data: v.any(), // Flexible data structure for different node types
+  }).index("by_project", ["projectId"]),
+
+  // Video editor graph edges (connections between nodes)
+  edges: defineTable({
+    projectId: v.id("projects"),
+    sourceNodeId: v.id("nodes"),
+    targetNodeId: v.id("nodes"),
+  }).index("by_project", ["projectId"])
+    .index("by_source", ["sourceNodeId"])
+    .index("by_target", ["targetNodeId"]),
+
   threadMetadata: defineTable({
     threadId: v.string(),
     projectId: v.id("projects"),

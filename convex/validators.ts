@@ -18,6 +18,10 @@ export const vAsset = v.object({
         v.literal("text"),
         v.literal("other")
     ),
+    category: v.union(
+        v.literal("upload"),
+        v.literal("artifact")
+    ),
     url: v.string(), // R2 URL
     key: v.string(), // R2 key for file identification
     metadata: v.optional(v.object({
@@ -26,6 +30,16 @@ export const vAsset = v.object({
         height: v.optional(v.number()),
         size: v.optional(v.number()),
         mimeType: v.optional(v.string()),
+        // Generation metadata for artifacts
+        generationPrompt: v.optional(v.string()),
+        generationModel: v.optional(v.string()),
+        generationParams: v.optional(v.any()),
+        analysis: v.optional(v.object({
+            quickSummary: v.optional(v.string()),
+            detailedSummary: v.optional(v.string()),
+            analyzedAt: v.optional(v.number()),
+            analysisModel: v.optional(v.string()),
+        })),
     })),
 })
 
