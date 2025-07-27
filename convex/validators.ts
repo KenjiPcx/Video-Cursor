@@ -102,6 +102,26 @@ export const vTimelineItem = v.object({
         size: v.optional(v.number()),
         mimeType: v.optional(v.string()),
         duration: v.optional(v.number()), // Original asset duration
+        // Generation metadata for AI-generated assets
+        generationPrompt: v.optional(v.string()),
+        generationModel: v.optional(v.string()),
+        generationParams: v.optional(v.any()),
+        analysis: v.optional(v.object({
+            quickSummary: v.optional(v.string()),
+            detailedSummary: v.optional(v.string()),
+            analyzedAt: v.optional(v.number()),
+            analysisModel: v.optional(v.string()),
+        })),
+        transcription: v.optional(v.object({
+            srt: v.string(),              // Full SRT format content
+            rawTranscription: v.any(),    // Raw Whisper API response
+            duration: v.number(),         // Audio duration from Whisper
+            transcribedAt: v.number(),    // Timestamp when transcribed
+            model: v.string(),           // "whisper-1"
+        })),
+        // Video splitting metadata
+        trimStart: v.optional(v.number()), // Start time for trimmed segments (seconds)
+        trimEnd: v.optional(v.number()),   // End time for trimmed segments (seconds)
     })),
 
     // Overlay positioning (for video/image overlays)

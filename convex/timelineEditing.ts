@@ -1,6 +1,7 @@
 import { mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { Id } from "./_generated/dataModel";
+import { vTimelineItem } from "./validators";
 
 // Composition filters validator
 const compositionFiltersValidator = v.object({
@@ -149,11 +150,6 @@ export const placeAssetOnTimeline = mutation({
         assetStartTime: v.optional(v.number()),   // Start time within source asset
         assetEndTime: v.optional(v.number()),     // End time within source asset
     },
-    returns: v.object({
-        timelineItemId: v.string(),
-        trackId: v.string(),
-        message: v.string(),
-    }),
     handler: async (ctx, args) => {
         // Get the project
         const project = await ctx.db.get(args.projectId);
@@ -771,6 +767,120 @@ export const reorderTimelineAssets = mutation({
             message: `Successfully reordered ${reorderedItems.length} timeline items ${reorderType}, ${timingDesc}${conflictsResolved.length > 0 ? '. Conflicts detected.' : '.'}`,
             reorderedItems,
             conflictsResolved: conflictsResolved.length > 0 ? conflictsResolved : undefined,
+        };
+    },
+});
+
+/**
+ * Sync graph-derived timeline data with existing project timeline data
+ * This merges assets placed via graph connections with assets placed via AI tools
+ */
+export const syncGraphToTimeline = mutation({
+    args: {
+        projectId: v.id("projects"),
+        graphTimelineData: v.object({
+            tracks: v.array(v.object({
+                id: v.string(),
+                type: v.union(v.literal("video"), v.literal("audio")),
+                name: v.string(),
+                items: v.array(vTimelineItem),
+            })),
+            duration: v.number(),
+            timelineScale: v.number(),
+        }),
+    },
+    returns: v.object({
+        success: v.boolean(),
+        message: v.string(),
+    }),
+    handler: async (ctx, args) => {
+        // Get the project
+        const project = await ctx.db.get(args.projectId);
+        if (!project) {
+            throw new Error("Project not found");
+        }
+
+        // Get current timeline data or create default
+        const currentTimelineData = project.timelineData || {
+            tracks: [
+                { id: 'video-1', type: 'video', name: 'Video 1', items: [] },
+                { id: 'audio-1', type: 'audio', name: 'Audio 1', items: [] }
+            ],
+            duration: 0,
+            timelineScale: 50,
+        };
+
+        // Merge strategy: 
+        // 1. Keep all AI-placed assets (they have assetId starting with actual asset IDs)
+        // 2. Add/update graph-derived assets (they typically have draft/scene-based IDs)
+        // 3. Ensure we don't duplicate items
+
+        const mergedTracks = [...currentTimelineData.tracks];
+
+        // For each graph track, merge its items with the existing track
+        for (const graphTrack of args.graphTimelineData.tracks) {
+            let existingTrack = mergedTracks.find(t => t.id === graphTrack.id);
+
+            // Create track if it doesn't exist
+            if (!existingTrack) {
+                existingTrack = {
+                    id: graphTrack.id,
+                    type: graphTrack.type,
+                    name: graphTrack.name,
+                    items: [],
+                };
+                mergedTracks.push(existingTrack);
+            }
+
+            // Remove old graph-derived items (items without real assetId or with draft-type IDs)
+            existingTrack.items = existingTrack.items.filter(item => {
+                // Keep AI-placed assets (they have real asset IDs)
+                return item.assetId && !item.id.startsWith('graph-') && !item.type.includes('draft');
+            });
+
+            // Add all graph-derived items
+            for (const graphItem of graphTrack.items) {
+                // Mark graph items with special prefix to identify them
+                const markedGraphItem = {
+                    ...graphItem,
+                    id: graphItem.id.startsWith('graph-') ? graphItem.id : `graph-${graphItem.id}`,
+                };
+                existingTrack.items.push(markedGraphItem);
+            }
+
+            // Sort items by start time for better organization
+            existingTrack.items.sort((a, b) => a.startTime - b.startTime);
+        }
+
+        // Update timeline duration to accommodate all items
+        const maxDuration = Math.max(
+            currentTimelineData.duration,
+            args.graphTimelineData.duration,
+            ...mergedTracks.flatMap(track =>
+                track.items.map(item => item.endTime)
+            )
+        );
+
+        const mergedTimelineData = {
+            tracks: mergedTracks,
+            duration: maxDuration,
+            timelineScale: currentTimelineData.timelineScale || args.graphTimelineData.timelineScale,
+            compositionFilters: currentTimelineData.compositionFilters,
+        };
+
+        // Save merged timeline data
+        await ctx.db.patch(args.projectId, {
+            timelineData: mergedTimelineData,
+        });
+
+        const graphItemCount = args.graphTimelineData.tracks.reduce((sum, track) => sum + track.items.length, 0);
+        const totalItemCount = mergedTracks.reduce((sum, track) => sum + track.items.length, 0);
+
+        console.log(`Synced ${graphItemCount} graph items with existing timeline. Total items: ${totalItemCount}`);
+
+        return {
+            success: true,
+            message: `Successfully synced ${graphItemCount} graph items with existing timeline data`,
         };
     },
 }); 

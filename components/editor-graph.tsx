@@ -19,21 +19,22 @@ import StartingNode, { type StartingNode as StartingNodeType } from './nodes/sta
 import DraftNode, { type DraftNode as DraftNodeType } from './nodes/draft-node';
 import VideoAssetNode, { type VideoAssetNode as VideoAssetNodeType } from './nodes/video-asset-node';
 import ImageAssetNode, { type ImageAssetNode as ImageAssetNodeType } from './nodes/image-asset-node';
+import AudioAssetNode, { type AudioAssetNode as AudioAssetNodeType } from './nodes/audio-asset-node';
+import GeneratingNode, { type GeneratingNode as GeneratingNodeType } from './nodes/generating-node';
 import { NodeWrapper } from './nodes/node-wrapper';
 import { CustomEdge } from './edges/custom-edge';
 import { TimelinePanel } from './timeline/timeline-panel';
-import { UploadOverlay } from './upload/upload-overlay';
 import { AssetDetailsPanel } from './asset-details-panel';
 import { AssetLibrary } from './asset-library';
 import { useEditorState } from '../hooks/use-editor-state';
 import { useFileUpload } from '../hooks/use-file-upload';
 import { Button } from './ui/button';
-import { ChevronUp, ChevronDown, Upload, RefreshCw, Library } from 'lucide-react';
+import { ChevronUp, ChevronDown, Upload, RefreshCw, Library, X } from 'lucide-react';
 
 import '@xyflow/react/dist/style.css';
 import { Id } from '@/convex/_generated/dataModel';
 
-export type EditorNodeType = StartingNodeType | DraftNodeType | VideoAssetNodeType | ImageAssetNodeType;
+export type EditorNodeType = StartingNodeType | DraftNodeType | VideoAssetNodeType | ImageAssetNodeType | AudioAssetNodeType | GeneratingNodeType;
 
 interface EditorGraphProps {
     threadId: string;
@@ -54,19 +55,7 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
     // Asset details panel state
     const [assetDetailsPanel, setAssetDetailsPanel] = useState<{
         isOpen: boolean;
-        assetData?: {
-            assetId: string;
-            name: string;
-            url: string;
-            type: 'video' | 'image';
-            metadata?: {
-                duration?: number;
-                width?: number;
-                height?: number;
-                mimeType?: string;
-                size?: number;
-            };
-        };
+        assetId?: Id<"assets">;
     }>({ isOpen: false });
 
     // Get project data for timeline
@@ -123,16 +112,9 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
 
         // Function to handle asset details click
         const handleAssetDetailsClick = (dbNode: any) => {
-            const assetType = dbNode.type === 'videoAsset' ? 'video' : 'image';
             setAssetDetailsPanel({
                 isOpen: true,
-                assetData: {
-                    assetId: dbNode.data.assetId,
-                    name: dbNode.data.name,
-                    url: dbNode.data.url,
-                    type: assetType,
-                    metadata: dbNode.data.metadata,
-                },
+                assetId: dbNode.data.assetId,
             });
         };
 
@@ -179,6 +161,25 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
                     },
                     className: highlightedNodes?.has(dbNode._id) ? 'highlighted' : '',
                 });
+            } else if (dbNode.type === 'audioAsset') {
+                nodes.push({
+                    id: dbNode._id,
+                    type: 'audioAsset',
+                    position: dbNode.position,
+                    data: {
+                        ...dbNode.data,
+                        onDetailsClick: () => handleAssetDetailsClick(dbNode),
+                    },
+                    className: highlightedNodes?.has(dbNode._id) ? 'highlighted' : '',
+                });
+            } else if (dbNode.type === 'generatingAsset') {
+                nodes.push({
+                    id: dbNode._id,
+                    type: 'generatingAsset',
+                    position: dbNode.position,
+                    data: dbNode.data,
+                    className: highlightedNodes?.has(dbNode._id) ? 'highlighted' : '',
+                });
             }
         });
 
@@ -197,7 +198,8 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
         onEdgesChange,
         onConnect,
         onEdgeDelete,
-        onNodeDelete
+        onNodeDelete,
+        createFromAsset
     } = useEditorState({
         projectId,
         flowNodes,
@@ -211,17 +213,17 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
             const asset = projectAssets?.find(a => a._id === assetId);
             if (!asset) return;
 
-            // Create node based on asset type
-            await createNode({
+            // Use createFromAsset mutation to properly populate node data
+            await createFromAsset({
                 projectId,
-                type: asset.type === "video" ? "videoAsset" : asset.type === "image" ? "imageAsset" : "draft",
-                position,
-                data: { assetId }
+                assetId,
+                assetType: asset.type as "video" | "audio" | "image",
+                position
             });
         } catch (error) {
             console.error("Failed to create node from asset:", error);
         }
-    }, [createNode, projectId, projectAssets]);
+    }, [createFromAsset, projectId, projectAssets]);
 
     // Memoize node and edge types to prevent React Flow re-renders
     const nodeTypes: NodeTypes = useMemo(() => ({
@@ -243,6 +245,16 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
         imageAsset: (props) => (
             <NodeWrapper node={props} onDelete={onNodeDelete}>
                 <ImageAssetNode {...props} />
+            </NodeWrapper>
+        ),
+        audioAsset: (props) => (
+            <NodeWrapper node={props} onDelete={onNodeDelete}>
+                <AudioAssetNode {...props} />
+            </NodeWrapper>
+        ),
+        generatingAsset: (props) => (
+            <NodeWrapper node={props} onDelete={onNodeDelete}>
+                <GeneratingNode {...props} />
             </NodeWrapper>
         ),
     }), [onNodeDelete]);
@@ -442,6 +454,8 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
                             case 'draft': return '#3f3f46';
                             case 'videoAsset': return '#2563eb';
                             case 'imageAsset': return '#7c3aed';
+                            case 'audioAsset': return '#16a34a';
+                            case 'generatingAsset': return '#f59e0b';
                             default: return '#52525b';
                         }
                     }}
@@ -469,6 +483,10 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
                             <div className="flex items-center gap-2 text-xs">
                                 <div className="w-3 h-3 bg-purple-500 rounded-full"></div>
                                 <span className="text-zinc-300">{nodes.filter(n => n.type === 'imageAsset').length} image assets</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-xs">
+                                <div className="w-3 h-3 bg-green-500 rounded-full"></div>
+                                <span className="text-zinc-300">{nodes.filter(n => n.type === 'audioAsset').length} audio assets</span>
                             </div>
                             <div className="flex items-center gap-2 text-xs">
                                 <div className="w-3 h-3 bg-gray-500 rounded-full"></div>
@@ -530,17 +548,75 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
             </ReactFlow>
 
             {/* Upload Overlay Component */}
-            <UploadOverlay
-                showUpload={showUpload}
-                uploading={uploading}
-                onClose={() => setShowUpload(false)}
-                onDrop={handleDrop}
-                onDragOver={handleDragOver}
-                onFileSelect={(files) => {
-                    handleFileUpload(files);
-                    setShowUpload(false);
-                }}
-            />
+            {showUpload && (
+                <div className="absolute inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-zinc-900 border border-zinc-700 rounded-lg p-6 w-96 max-w-[90vw]">
+                        <div className="flex items-center justify-between mb-4">
+                            <h3 className="text-lg font-semibold text-white">Add Assets</h3>
+                            <Button
+                                variant="ghost"
+                                size="sm"
+                                onClick={() => setShowUpload(false)}
+                                className="h-6 w-6 p-0 hover:bg-zinc-800"
+                            >
+                                <X className="h-4 w-4" />
+                            </Button>
+                        </div>
+
+                        <div
+                            className="border-2 border-dashed border-zinc-600 rounded-lg p-8 text-center hover:border-zinc-500 transition-colors"
+                            onDrop={(e) => {
+                                handleDrop(e);
+                                if (e.dataTransfer.files.length > 0) {
+                                    const filesWithDescriptions = Array.from(e.dataTransfer.files).map(file => ({
+                                        file,
+                                        description: ''
+                                    }));
+                                    handleFileUpload(filesWithDescriptions);
+                                    setShowUpload(false);
+                                }
+                            }}
+                            onDragOver={handleDragOver}
+                        >
+                            <Upload className="h-12 w-12 text-zinc-400 mx-auto mb-4" />
+                            <p className="text-white mb-2">Drop files here or click to browse</p>
+                            <p className="text-zinc-400 text-sm mb-4">Supports video, audio, and image files</p>
+
+                            <input
+                                type="file"
+                                multiple
+                                accept="video/*,audio/*,image/*"
+                                onChange={(e) => {
+                                    if (e.target.files && e.target.files.length > 0) {
+                                        const filesWithDescriptions = Array.from(e.target.files).map(file => ({
+                                            file,
+                                            description: ''
+                                        }));
+                                        handleFileUpload(filesWithDescriptions);
+                                        setShowUpload(false);
+                                    }
+                                }}
+                                className="hidden"
+                                id="file-upload"
+                            />
+                            <Button
+                                onClick={() => document.getElementById('file-upload')?.click()}
+                                disabled={uploading}
+                                className="bg-blue-600 hover:bg-blue-700"
+                            >
+                                {uploading ? 'Uploading...' : 'Choose Files'}
+                            </Button>
+                        </div>
+
+                        {uploading && (
+                            <div className="mt-4 text-center">
+                                <div className="text-white text-sm">Uploading files...</div>
+                                <div className="text-zinc-400 text-xs mt-1">This may take a moment</div>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* Asset Library Panel */}
             {showAssetLibrary && (
@@ -560,14 +636,16 @@ function EditorGraphFlow({ threadId, projectId, onNodeSelect, highlightedNodes, 
                 showTimeline={showTimeline}
                 nodes={nodes}
                 edges={edges}
+                projectData={projectData}
+                projectId={projectId}
             />
 
             {/* Asset Details Panel */}
-            {assetDetailsPanel.isOpen && assetDetailsPanel.assetData && (
+            {assetDetailsPanel.isOpen && assetDetailsPanel.assetId && (
                 <AssetDetailsPanel
                     isOpen={assetDetailsPanel.isOpen}
                     onClose={() => setAssetDetailsPanel({ isOpen: false })}
-                    assetData={assetDetailsPanel.assetData}
+                    assetId={assetDetailsPanel.assetId}
                 />
             )}
         </div>

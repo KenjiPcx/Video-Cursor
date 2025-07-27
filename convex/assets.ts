@@ -7,6 +7,7 @@ import { videoEditingAgent } from "./agents";
 import { model } from "../lib/ai/models";
 import { convertAttachmentsToContent } from "./chat";
 import OpenAI from "openai";
+import { generateText } from "ai";
 
 // Create a new asset (decoupled from node creation)
 export const create = mutation({
@@ -242,7 +243,7 @@ export const analyzeAsset = internalAction({
                 ? `Analyze this image and provide a QUICK SUMMARY (2-3 sentences) and DETAILED SUMMARY describing visual elements, composition, subjects, lighting, mood, and any notable features.`
                 : `Analyze this video and provide a QUICK SUMMARY (2-3 sentences) and DETAILED SUMMARY with timestamps describing scenes, actions, visual elements, and key moments.`;
 
-            const analysisTask = videoEditingAgent.generateText(ctx, {}, {
+            const analysisTask = generateText({
                 model,
                 messages: [{
                     role: "user",
@@ -258,17 +259,40 @@ export const analyzeAsset = internalAction({
             let transcriptionTask: Promise<any> | null = null;
             if (asset.type === "video") {
                 console.log(`Transcribing video: ${asset.name}`);
-                transcriptionTask = openai.audio.transcriptions.create({
-                    file: await fetch(asset.url).then(res => {
-                        const blob = res.blob();
-                        // Add name property for OpenAI API
-                        Object.defineProperty(blob, 'name', { value: asset.name });
-                        return blob;
-                    }) as any,
-                    model: "whisper-1",
-                    response_format: "verbose_json",
-                    timestamp_granularities: ["word"],
-                });
+                transcriptionTask = (async () => {
+                    try {
+                        console.log(`Fetching video file from: ${asset.url}`);
+                        const response = await fetch(asset.url);
+
+                        if (!response.ok) {
+                            throw new Error(`Failed to fetch video: ${response.status} ${response.statusText}`);
+                        }
+
+                        const blob = await response.blob();
+                        console.log(`Video blob size: ${blob.size} bytes, type: ${blob.type}`);
+
+                        if (blob.size === 0) {
+                            throw new Error("Video file is empty");
+                        }
+
+                        // Create a proper File object for OpenAI API
+                        const file = new File([blob], asset.name, {
+                            type: blob.type || asset.metadata?.mimeType || 'video/mp4'
+                        });
+
+                        console.log(`Created file object: ${file.name}, size: ${file.size}, type: ${file.type}`);
+
+                        return await openai.audio.transcriptions.create({
+                            file: file as any,
+                            model: "whisper-1",
+                            response_format: "verbose_json",
+                            timestamp_granularities: ["word"],
+                        });
+                    } catch (error) {
+                        console.error(`Transcription setup failed for ${asset.name}:`, error);
+                        throw error;
+                    }
+                })();
                 tasks.push(transcriptionTask);
             }
 
@@ -280,12 +304,19 @@ export const analyzeAsset = internalAction({
             let analysisData = null;
             if (analysisResult.status === "fulfilled") {
                 const result = analysisResult.value;
-                analysisData = {
-                    quickSummary: result.text.substring(0, 200),
-                    detailedSummary: result.text,
-                    analyzedAt: Date.now(),
-                    analysisModel: "gemini-2.5-pro",
-                };
+                console.log(`Visual analysis completed for ${asset.name}`);
+
+                if (result && result.text) {
+                    analysisData = {
+                        quickSummary: result.text.substring(0, 200),
+                        detailedSummary: result.text,
+                        analyzedAt: Date.now(),
+                        analysisModel: "gemini-2.5-pro",
+                    };
+                    console.log(`Analysis data created: ${analysisData.quickSummary}`);
+                } else {
+                    console.error("Visual analysis result missing text:", result);
+                }
             } else {
                 console.error("Visual analysis failed:", analysisResult.reason);
             }
@@ -296,6 +327,12 @@ export const analyzeAsset = internalAction({
                 const transcriptionResult = results[1];
                 if (transcriptionResult.status === "fulfilled") {
                     const transcription = transcriptionResult.value;
+                    console.log(`Transcription completed for ${asset.name}:`, {
+                        duration: transcription.duration,
+                        wordCount: transcription.words?.length || 0,
+                        hasWords: !!transcription.words
+                    });
+
                     const srt = convertToSRT(transcription.words || []);
                     transcriptionData = {
                         srt,
@@ -304,9 +341,10 @@ export const analyzeAsset = internalAction({
                         transcribedAt: Date.now(),
                         model: "whisper-1",
                     };
-                    console.log(`Transcribed video: ${asset.name} (${transcription.duration}s)`);
+                    console.log(`Successfully created transcription data for ${asset.name} (${transcription.duration}s)`);
                 } else {
-                    console.error("Transcription failed:", transcriptionResult.reason);
+                    console.error(`Transcription failed for ${asset.name}:`, transcriptionResult.reason);
+                    // Continue processing even if transcription fails - we can still save visual analysis
                 }
             }
 
@@ -318,12 +356,21 @@ export const analyzeAsset = internalAction({
                 ...(transcriptionData && { transcription: transcriptionData }),
             };
 
-            await ctx.runMutation(api.assets.update, {
-                id: args.assetId,
-                metadata: updatedMetadata
-            });
+            // Only update if we have new data to add
+            if (analysisData || transcriptionData) {
+                await ctx.runMutation(api.assets.update, {
+                    id: args.assetId,
+                    metadata: updatedMetadata
+                });
 
-            console.log(`Completed processing for ${asset.type}: ${asset.name}`);
+                const completedTasks = [];
+                if (analysisData) completedTasks.push("visual analysis");
+                if (transcriptionData) completedTasks.push("transcription");
+
+                console.log(`Successfully completed ${completedTasks.join(" and ")} for ${asset.type}: ${asset.name}`);
+            } else {
+                console.warn(`No analysis data generated for ${asset.type}: ${asset.name} - asset not updated`);
+            }
         } catch (error) {
             console.error("Failed to analyze asset:", error);
         }

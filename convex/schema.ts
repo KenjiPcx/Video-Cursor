@@ -19,7 +19,7 @@ export default defineSchema({
   // Video editor graph nodes
   nodes: defineTable({
     projectId: v.id("projects"),
-    type: v.union(v.literal("starting"), v.literal("draft"), v.literal("videoAsset"), v.literal("imageAsset"), v.literal("generatingAsset")),
+    type: v.union(v.literal("starting"), v.literal("draft"), v.literal("videoAsset"), v.literal("imageAsset"), v.literal("audioAsset"), v.literal("generatingAsset")),
     position: v.object({
       x: v.number(),
       y: v.number(),

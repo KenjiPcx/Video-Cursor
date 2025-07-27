@@ -188,7 +188,7 @@ Text to editing
 - **AI Tool**: `reorderTimelineAssets` with comprehensive validation and flow optimization guidance
 - **Backend**: Complete mutation with gap preservation, conflict resolution, and detailed change tracking
 
-#### **7. Background Removal Tool** (✅ COMPLETED - FINAL):
+#### **7. Background Removal Tool** (✅ COMPLETED):
 - **Unified Image & Video Processing**: AI-powered background removal for both images and videos using specialized models
 - **Smart Model Selection**: Automatically chooses appropriate Replicate model based on asset type:
   - Images: `lucataco/remove-bg` for high-quality image background removal
@@ -199,7 +199,20 @@ Text to editing
 - **AI Tool**: `removeBackground` with unified interface for images and videos
 - **Fire-and-Forget Architecture**: Instant loading node creation with background processing and automatic asset updates
 
-🎬 **COMPLETE AI VIDEO EDITOR**: All 7 core video editing tools implemented for professional video production workflows!
+#### **8. Graph Edge Management Tools** (✅ COMPLETED - FINAL):
+- **Story Flow Management**: AI can now create and manage connections between nodes in the video editor graph
+- **Three Core Tools**:
+  - **linkNodes**: Connect two nodes to create story sequences and narrative flow
+  - **unlinkNodes**: Disconnect specific node pairs for story restructuring  
+  - **unlinkAllFromNode**: Completely isolate a node by removing all connections (with option to preserve incoming)
+- **Auto-Editing Capabilities**: AI can automatically organize clips into logical sequences
+- **Smart Validation**: Prevents invalid operations (self-linking, non-existent nodes, cross-project connections)
+- **Duplicate Prevention**: `linkNodes` automatically prevents duplicate edges
+- **Timeline Integration**: Edge changes immediately affect timeline path and main story flow
+- **Flexible Workflows**: Support for linear sequences, branching narratives, and content reorganization
+- **Visual Feedback**: Tools provide detailed success/error messages with node titles and connection counts
+
+🎬 **COMPLETE AI VIDEO EDITOR**: All 8 core video editing tools implemented for professional video production workflows with full graph management!
 
 ### Next Steps  
 1. ✅ **Asset Upload**: Implemented Cloudflare R2 upload with project association
@@ -215,11 +228,111 @@ Text to editing
 11. ✅ **Place Asset Tool**: Generic asset placement with overlay positioning, auto-track assignment, and trimming
 12. ✅ **Target Modify Tool**: Modify existing timeline asset properties with smart conflict detection
 13. ✅ **Reorder Tool**: Intelligent clip sequencing with dual modes and advanced timing options
-14. ✅ **AI Video Editing Tools**: Complete professional video editing toolkit with 6 core tools
-15. **Timeline UI**: Add drag-and-drop, trimming, and gap management (NEXT)
-16. **Asset-Scene Linking**: Connect real assets to draft scenes
+14. ✅ **AI Video Editing Tools**: Complete professional video editing toolkit with 7 core tools
+15. ✅ **Timeline Synchronization**: Graph connections and AI-placed assets fully synchronized to database
+16. **Timeline UI**: Add drag-and-drop, trimming, and gap management (NEXT)
+17. **Asset-Scene Linking**: Connect real assets to draft scenes
 
 ### Recent Completions (✅)
+- **Interactive Timeline Drag & Drop** (✅): Professional video editor timeline with intelligent clip positioning
+  - **Main Video Track (Video 1)**: Auto-snap and auto-join functionality for seamless sequence editing
+    - Clips automatically snap to other clips' start/end points (500ms threshold)
+    - Grid snapping to 1-second intervals (250ms threshold) 
+    - Sequential flow maintains proper clip ordering without gaps
+    - Visual snap indicators with yellow highlight during drag
+  - **Audio & Overlay Tracks**: Free positioning for precise timing control
+    - Drag anywhere on timeline without snapping constraints
+    - Perfect for syncing background music, voiceovers, and overlay graphics
+    - Pixel-perfect positioning for advanced compositing workflows
+  - **Professional UX**: Industry-standard drag behavior with visual feedback
+    - Grab cursor changes to grabbing during drag
+    - Dragged items show ring highlights and elevated z-index
+    - Real-time position updates with smooth animations
+    - Track-specific helper text ("Auto-snap" vs "Precise positioning")
+  - **Backend Integration**: Real-time database updates via `modifyTimelineAsset` mutation
+    - Automatic position syncing when drag completes
+    - Graph-derived items (temporary) vs database items handled separately
+    - Duration preservation during position changes
+    - Error handling with console feedback
+  - **Smart State Management**: Centralized drag state with custom hook
+    - Global mouse tracking for smooth drag across entire timeline
+    - Proper cleanup and event management
+    - Snap calculations based on all timeline items for collision detection
+- **Analysis Status & Manual Trigger System** (✅): Reintroduced automatic content analysis with user control
+  - **Automatic Analysis**: Visual assets (images/videos) automatically analyzed after upload via `createAssetFromUpload`
+    - Moved analysis scheduling from deprecated `store` action to current upload flow
+    - Uses existing `analyzeAsset` function for visual analysis (Gemini) and transcription (Whisper)
+    - Analysis results stored in asset metadata with `analysis` and `transcription` fields
+  - **Manual Trigger**: Added `triggerAssetAnalysis` action for user-initiated analysis
+    - Validation ensures only analyzable assets (images/videos) can be processed
+    - Authentication required for manual triggers
+    - Fire-and-forget pattern with background processing
+  - **Enhanced Asset Details Panel**: Shows comprehensive analysis status in asset modal
+    - **Reactive Data Fetching**: Panel now uses `useQuery` to fetch current asset data from database
+    - **Real-time Updates**: Analysis results appear immediately when processing completes
+    - Visual analysis status with quick summary and detailed description display
+    - Video transcription status with duration and completion timestamps
+    - Manual trigger button when analysis hasn't been completed
+    - Loading states with spinner and progress feedback
+    - Green/amber status indicators for visual feedback
+  - **Reusable Analysis Indicator**: Created `AnalysisStatusIndicator` component for use throughout app
+    - Compact variant: Small status badge with inline analyze button
+    - Detailed variant: Full status breakdown with separate trigger button
+    - Click-through protection to prevent unintended parent interactions
+    - Real-time status updates and loading states
+  - **Complete Integration**: Files are now analyzed for AI to understand how to edit
+    - Automatic analysis on upload ensures new assets are immediately ready for AI editing tools
+    - Manual triggers allow users to analyze older assets or retry failed analysis
+    - Analysis metadata enhances AI tool context for better video editing decisions
+    - **Fixed UI Reactivity**: Asset details now refresh automatically when analysis completes
+- **Timeline Data Synchronization (Fixed Loop Issue)** (✅): Solved critical disconnect between graph UI and database timeline
+  - **Problem 1 Solved**: Graph connections and AI-placed assets were showing separately, causing timeline UI to be out of sync with database
+  - **Problem 2 Solved**: Initial reactive loop where `useEffect` sync created infinite updates in Convex reactive system
+  - **Smart Merging UI**: Timeline panel now merges both data sources in real-time for display without causing reactive loops
+    - AI-placed assets (from database) shown with original IDs
+    - Graph-derived assets shown with "graph-" prefix 
+    - Both sources appear together seamlessly in UI
+  - **Manual Sync Control**: Added "Save Graph" button that appears when there are unsaved graph changes
+    - Users explicitly choose when to save graph connections to database
+    - No automatic syncing prevents Convex reactive loops
+    - Green button with save icon appears only when needed
+  - **Unified Preview**: Preview modal uses same merging logic showing complete timeline state
+  - **Chat Context Updated**: AI reads actual synced timeline data for consistent understanding  
+  - **Result**: Graph connections AND AI-placed assets both appear in timeline UI, render correctly in preview, and sync manually when user chooses
+- **Generating Node UI with Timer** (✅): Enhanced AI generation UX with real-time progress feedback
+  - **GeneratingNode Component**: Created dedicated component with countdown timer, loading animation, and progress bar
+  - **60-Second Timer**: Countdown starts from 60s when generation begins, shows "Taking longer than expected" when expired
+  - **Visual Feedback**: Animated spinner, progress bar, type-specific colors (blue=video, purple=image, green=audio)
+  - **Real-time Updates**: Timer updates every second based on node creation timestamp
+  - **Complete Integration**: Added to EditorNodeType union, registered in nodeTypes, fixed flow conversion, added minimap color
+  - **Enhanced UX**: Shows generation prompt, model info, and expected asset type during loading
+  - **Fire-and-Forget Ready**: Works seamlessly with existing `createGeneratingNode`/`updateGeneratingNodeToAsset` system
+- **AI Generation URL Fetch Fix** (✅): Fixed critical bug in all AI generation functions
+  - **Root Cause**: Replicate models return URL strings, not FileOutput objects with `.bytes()` method
+  - **Impact**: All AI generation (Runway, Flux, Hailuo) was failing at the storage step
+  - **Solution**: Fetch content from URLs and convert to ArrayBuffer before storing
+  - **Models Fixed**: 
+    - Runway Gen4 Image: `runwayml/gen4-image` 
+    - Flux Kontext Pro: `black-forest-labs/flux-kontext-pro`
+    - Hailuo Video: `minimax/hailuo-02`
+  - **Error Handling**: Added proper fetch error checking with status validation
+  - **Logging**: Enhanced logging to show actual output URLs for debugging
+- **Complete Editor Context Integration** (✅): AI now has full visibility into video editor state
+  - **Context Gathering**: Implemented `gatherEditorContext()` helper function in chat endpoint
+  - **Comprehensive Data**: AI receives all nodes, edges, timeline path, assets, and timeline state
+  - **Structured Format**: Editor context formatted in readable text structure for AI consumption
+  - **Performance Optimized**: Parallel queries for nodes, edges, timeline path, assets, and project data
+  - **Rich Metadata**: Includes node positions, connections, asset details, trim info, and descriptions
+  - **Timeline Integration**: Shows main story flow from connected nodes plus current timeline state
+  - **Live Updates**: Context gathered fresh on every chat message for real-time editor awareness
+  - **Backend-Driven**: Timeline data loaded directly from database for reliability (no frontend dependency)
+- **File Upload with Descriptions** (✅): Enhanced upload system with individual file descriptions  
+  - **Backend Support**: Added `description` parameter to `createAssetFromUpload` action
+  - **Enhanced Hook**: Modified `useFileUpload` to manage file selections with descriptions
+  - **Two-Step UI**: Redesigned `UploadOverlay` with file selection → description input → upload flow
+  - **Individual Controls**: Each file gets its own description textarea, remove button, and metadata display
+  - **Flexible Workflow**: Support for drag & drop, file selection, adding more files, and batch upload
+  - **Better AI Context**: Descriptions stored in asset metadata for improved AI tool understanding
 - **Asset Library Implementation**: Created floating panel system for asset management
   - **Floating Panel Design**: Toggleable panel in left-center area (320px wide, max 70vh height)
   - **Visual Asset Cards**: Thumbnail previews, metadata display, search functionality
@@ -415,3 +528,10 @@ Text to editing
     - Prepare assets for advanced compositing workflows
     - Generate transparent elements for tutorials and marketing content
     - Build professional content elements without green screen equipment
+- **Graph Edge Management Tools** (✅): AI can now manage story flow by connecting and disconnecting nodes
+  - **Three Powerful Tools**: `linkNodes`, `unlinkNodes`, and `unlinkAllFromNode` for complete graph control
+  - **Auto-Editing Capabilities**: AI can automatically organize clips into logical sequences and restructure narratives  
+  - **Smart Validation**: Comprehensive error checking prevents invalid operations and maintains graph consistency
+  - **Timeline Integration**: Edge changes immediately update main story flow and timeline path
+  - **Story Building**: Linear sequences, branching narratives, and thematic grouping all supported
+  - **Professional Workflows**: Asset workflows, content organization, and major story restructuring

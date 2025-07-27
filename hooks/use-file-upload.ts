@@ -8,20 +8,53 @@ interface UseFileUploadProps {
     projectId: Id<"projects">;
 }
 
+export interface FileWithDescription {
+    file: File;
+    description: string;
+}
+
 export function useFileUpload({ projectId }: UseFileUploadProps) {
     const [uploading, setUploading] = useState(false);
+    const [selectedFiles, setSelectedFiles] = useState<FileWithDescription[]>([]);
     const uploadFile = useUploadFile(api.upload);
     const createAsset = useAction(api.upload.createAssetFromUpload);
 
-    // Handle file upload using useUploadFile hook
-    const handleFileUpload = useCallback(async (files: FileList) => {
-        if (!files.length) return;
+    // Handle file selection (for showing in UI before upload)
+    const handleFileSelection = useCallback((files: FileList) => {
+        const filesWithDescriptions: FileWithDescription[] = Array.from(files).map(file => ({
+            file,
+            description: '', // Start with empty description
+        }));
+        setSelectedFiles(filesWithDescriptions);
+    }, []);
 
-        console.log('📁 Starting file upload for', files.length, 'files');
+    // Update description for a specific file
+    const updateFileDescription = useCallback((index: number, description: string) => {
+        setSelectedFiles(prev => prev.map((item, i) =>
+            i === index ? { ...item, description } : item
+        ));
+    }, []);
+
+    // Remove a file from the selection
+    const removeFile = useCallback((index: number) => {
+        setSelectedFiles(prev => prev.filter((_, i) => i !== index));
+    }, []);
+
+    // Clear all selected files
+    const clearFiles = useCallback(() => {
+        setSelectedFiles([]);
+    }, []);
+
+    // Handle file upload with descriptions
+    const handleFileUpload = useCallback(async (filesWithDescriptions?: FileWithDescription[]) => {
+        const filesToUpload = filesWithDescriptions || selectedFiles;
+        if (!filesToUpload.length) return;
+
+        console.log('📁 Starting file upload for', filesToUpload.length, 'files');
         setUploading(true);
 
-        for (let i = 0; i < files.length; i++) {
-            const file = files[i];
+        for (let i = 0; i < filesToUpload.length; i++) {
+            const { file, description } = filesToUpload[i];
 
             try {
                 console.log('📤 Uploading file:', file.name, `(${(file.size / (1024 * 1024)).toFixed(2)} MB)`);
@@ -31,7 +64,7 @@ export function useFileUpload({ projectId }: UseFileUploadProps) {
 
                 console.log('📦 File uploaded to R2 with key:', key);
 
-                // Create asset record in database
+                // Create asset record in database with description
                 await createAsset({
                     key,
                     name: file.name,
@@ -39,6 +72,7 @@ export function useFileUpload({ projectId }: UseFileUploadProps) {
                     size: file.size,
                     projectId,
                     category: "upload",
+                    description: description || undefined, // Only pass description if it's not empty
                 });
 
                 console.log('✅ File uploaded successfully:', file.name);
@@ -50,18 +84,19 @@ export function useFileUpload({ projectId }: UseFileUploadProps) {
         }
 
         setUploading(false);
+        setSelectedFiles([]); // Clear after successful upload
         console.log('📁 Upload process completed');
-    }, [uploadFile, createAsset, projectId]);
+    }, [uploadFile, createAsset, projectId, selectedFiles]);
 
-    // Handle drag and drop
+    // Handle drag and drop (for immediate selection)
     const handleDrop = useCallback((event: React.DragEvent) => {
         event.preventDefault();
         const files = event.dataTransfer.files;
         if (files.length > 0) {
             console.log('🎯 Files dropped:', files.length);
-            handleFileUpload(files);
+            handleFileSelection(files);
         }
-    }, [handleFileUpload]);
+    }, [handleFileSelection]);
 
     const handleDragOver = useCallback((event: React.DragEvent) => {
         event.preventDefault();
@@ -69,6 +104,11 @@ export function useFileUpload({ projectId }: UseFileUploadProps) {
 
     return {
         uploading,
+        selectedFiles,
+        handleFileSelection,
+        updateFileDescription,
+        removeFile,
+        clearFiles,
         handleFileUpload,
         handleDrop,
         handleDragOver,

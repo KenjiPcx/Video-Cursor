@@ -46,9 +46,9 @@ export function AssetLibrary({ projectId, onAssetDrop, onClose }: AssetLibraryPr
     };
 
     return (
-        <div className="w-full h-full flex flex-col">
+        <div className="w-full max-h-[60vh] flex flex-col">
             {/* Header */}
-            <div className="p-4 border-b border-zinc-700">
+            <div className="p-4 border-b border-zinc-700 flex-shrink-0">
                 <div className="flex items-center justify-between mb-3">
                     <h2 className="text-lg font-semibold text-white">Asset Library</h2>
                     {onClose && (

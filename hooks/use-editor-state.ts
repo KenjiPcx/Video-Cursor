@@ -23,6 +23,7 @@ export function useEditorState({ projectId, flowNodes, flowEdges }: UseEditorSta
     const createEdge = useMutation(api.edges.create);
     const removeEdge = useMutation(api.edges.remove);
     const removeNode = useMutation(api.nodes.remove);
+    const createFromAsset = useMutation(api.nodes.createFromAsset);
 
     // Debounced position update function
     const debouncedPositionUpdate = useCallback((nodeId: string, position: { x: number; y: number }) => {
@@ -151,5 +152,6 @@ export function useEditorState({ projectId, flowNodes, flowEdges }: UseEditorSta
         onConnect,
         onEdgeDelete,
         onNodeDelete,
+        createFromAsset,
     };
 } 

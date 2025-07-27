@@ -47,11 +47,6 @@ export const store = action({
         generationModel,
         generationParams,
     }) => {
-        const userId = await getAuthUserId(ctx);
-        if (!userId) {
-            throw new Error("Unauthorized");
-        }
-
         const blob = new Blob([bytes], { type: mimeType });
 
         // Upload to R2 and get the key
@@ -120,6 +115,7 @@ export const createAssetFromUpload = action({
         size: v.number(),
         projectId: v.id("projects"),
         category: v.union(v.literal("upload"), v.literal("artifact")),
+        description: v.optional(v.string()),
         generationPrompt: v.optional(v.string()),
         generationModel: v.optional(v.string()),
         generationParams: v.optional(v.any()),
@@ -141,13 +137,14 @@ export const createAssetFromUpload = action({
         else if (args.type.startsWith("text/")) assetType = "text";
 
         // Create asset record
-        await ctx.runMutation(api.assets.create, {
+        const assetId: Id<"assets"> = await ctx.runMutation(api.assets.create, {
             projectId: args.projectId,
             name: args.name,
             type: assetType,
             url,
             key: args.key,
             category: args.category,
+            description: args.description,
             metadata: {
                 size: args.size,
                 mimeType: args.type,
@@ -156,6 +153,44 @@ export const createAssetFromUpload = action({
                 ...(args.generationModel && { generationModel: args.generationModel }),
                 ...(args.generationParams && { generationParams: args.generationParams }),
             },
+        });
+
+        // Schedule automatic content analysis for uploaded visual assets only
+        if (args.category === "upload" && (assetType === "video" || assetType === "image")) {
+            await ctx.scheduler.runAfter(0, internal.assets.analyzeAsset, {
+                assetId: assetId,
+            });
+        }
+
+        return { success: true };
+    },
+});
+
+// Manual trigger for asset analysis
+export const triggerAssetAnalysis = action({
+    args: {
+        assetId: v.id("assets"),
+    },
+    handler: async (ctx, args) => {
+        const userId = await getAuthUserId(ctx);
+        if (!userId) {
+            throw new Error("Unauthorized");
+        }
+
+        // Get the asset to validate it exists and is analyzable
+        const asset = await ctx.runQuery(api.assets.get, { id: args.assetId });
+        if (!asset) {
+            throw new Error("Asset not found");
+        }
+
+        // Only allow analysis of visual content
+        if (!asset.type || !["image", "video"].includes(asset.type)) {
+            throw new Error("Only images and videos can be analyzed");
+        }
+
+        // Schedule the analysis
+        await ctx.scheduler.runAfter(0, internal.assets.analyzeAsset, {
+            assetId: args.assetId,
         });
 
         return { success: true };

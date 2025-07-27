@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation, httpAction, query, action, internalMutation } from "./_generated/server";
+import { mutation, httpAction, query, action, internalMutation, ActionCtx } from "./_generated/server";
 import { api, components } from "./_generated/api";
 import { videoEditingAgent } from "./agents";
 import { getAuthUserId } from "@convex-dev/auth/server";
@@ -9,7 +9,7 @@ import { Attachment, UIMessage } from "ai";
 import { vAttachment } from "./validators";
 import { Doc, Id } from "./_generated/dataModel";
 import dedent from "dedent";
-import { createDraftScene, generateImageWithRunway, generateCharacterControlVideo, generateVideoWithHailuo, generateVoiceNarration, generateImageWithFlux, searchVoiceModels, applyCompositionFilter, placeAssetOnTimeline, modifyTimelineAsset, extractInterestingSegments, splitVideoAsset, removeBackground, ToolCtx, reorderTimelineAssets } from "./agentTools";
+import { createDraftScene, generateImageWithRunway, generateCharacterControlVideo, generateVideoWithHailuo, generateVoiceNarration, generateImageWithFlux, searchVoiceModels, applyCompositionFilter, placeAssetOnTimeline, modifyTimelineAsset, extractInterestingSegments, splitVideoAsset, removeBackground, ToolCtx, reorderTimelineAssets, linkNodes, unlinkNodes, unlinkAllFromNode } from "./agentTools";
 
 // Create a new thread
 export const createThread = mutation({
@@ -101,11 +101,118 @@ export const convertAttachmentsToContent = (
 }
 
 type ChatRequest = {
-    message: UIMessage,
+    messages: UIMessage[],
     threadId: string,
     projectId: string,
-    attachments: Array<Attachment>,
-    timelineData: Doc<"projects">["timelineData"]
+    attachments: Array<Attachment>
+}
+
+// Helper function to derive timeline path from nodes and edges (for display purposes)
+function deriveTimelinePath(nodes: Doc<"nodes">[], edges: Doc<"edges">[]): Doc<"nodes">[] {
+    // Find the starting node
+    const startingNode = nodes.find(node => node.type === "starting");
+    if (!startingNode) return [];
+
+    // Build adjacency map from edges
+    const adjacencyMap = new Map<string, string[]>();
+    edges.forEach(edge => {
+        if (!adjacencyMap.has(edge.sourceNodeId)) {
+            adjacencyMap.set(edge.sourceNodeId, []);
+        }
+        adjacencyMap.get(edge.sourceNodeId)!.push(edge.targetNodeId);
+    });
+
+    // Follow the path from starting node
+    const path: Doc<"nodes">[] = [startingNode];
+    const visited = new Set<string>([startingNode._id]);
+    let currentNodeId = startingNode._id;
+
+    while (true) {
+        const nextNodeIds = adjacencyMap.get(currentNodeId) || [];
+        const unvisitedNext = nextNodeIds.find(id => !visited.has(id));
+
+        if (!unvisitedNext) break;
+
+        const nextNode = nodes.find(node => node._id === unvisitedNext);
+        if (!nextNode) break;
+
+        path.push(nextNode);
+        visited.add(nextNode._id);
+        currentNodeId = nextNode._id;
+    }
+
+    return path;
+}
+
+// Helper function to gather all editor context for the AI
+async function gatherEditorContext(ctx: ActionCtx, projectId: string) {
+    const projectIdTyped = projectId as Id<"projects">;
+
+    // Gather all editor data - removed broken getTimelinePath query
+    const [nodes, edges, assets, project] = await Promise.all([
+        ctx.runQuery(api.nodes.listByProject, { projectId: projectIdTyped }),
+        ctx.runQuery(api.edges.listByProject, { projectId: projectIdTyped }),
+        ctx.runQuery(api.assets.listByProject, { projectId: projectIdTyped }),
+        ctx.runQuery(api.projects.get, { id: projectIdTyped })
+    ]);
+
+    // Derive timeline path locally from nodes and edges (for display only)
+    const timelinePath = deriveTimelinePath(nodes, edges);
+
+    // Get timeline data from project (this now includes both graph-derived and AI-placed assets)
+    const timelineData = project?.timelineData;
+
+    // Format nodes
+    const nodesText = nodes.map((node: Doc<"nodes">) => {
+        const position = `(${node.position.x}, ${node.position.y})`;
+        const title = node.data?.title || node.data?.name || `${node.type} node`;
+        const description = node.data?.description ? ` | Description: "${node.data.description}"` : '';
+        const assetId = node.data?.assetId ? ` | Asset: ${node.data.assetId}` : '';
+        const url = node.data?.assetUrl ? ` | URL: ${node.data.assetUrl}` : '';
+        return `  - ID: ${node._id} | Type: ${node.type} | Position: ${position} | Title: "${title}"${description}${assetId}${url}`;
+    }).join('\n');
+
+    // Format edges
+    const edgesText = edges.map(edge =>
+        `  - ${edge.sourceNodeId} → ${edge.targetNodeId}`
+    ).join('\n');
+
+    // Format timeline path (main story flow) - now using derived path
+    const timelinePathText = timelinePath.map((node, index) => {
+        const title = node.data?.title || node.data?.name || `${node.type} node`;
+        return `  ${index + 1}. ${title} (${node.type})`;
+    }).join('\n');
+
+    // Format assets
+    const assetsText = assets.map(asset => {
+        const duration = asset.metadata?.duration ? ` | Duration: ${Math.round(asset.metadata.duration)}s` : '';
+        const dimensions = asset.metadata?.width && asset.metadata.height ?
+            ` | Size: ${asset.metadata.width}x${asset.metadata.height}` : '';
+        const description = asset.description ? ` | Description: "${asset.description}"` : '';
+        const trimInfo = asset.metadata?.trimStart !== undefined ?
+            ` | Trimmed: ${asset.metadata.trimStart}s-${asset.metadata.trimEnd}s` : '';
+        const url = asset.url ? ` | URL: ${asset.url}` : '';
+        return `  - ID: ${asset._id} | Type: ${asset.type} | Name: "${asset.name}"${duration}${dimensions}${description}${trimInfo}${url}`;
+    }).join('\n');
+
+    return `
+=== EDITOR CONTEXT ===
+
+CANVAS NODES (${nodes.length} total):
+${nodesText || '  (No nodes)'}
+
+NODE CONNECTIONS (${edges.length} total):
+${edgesText || '  (No connections)'}
+
+MAIN TIMELINE PATH (Story Flow):
+${timelinePathText || '  (No connected path)'}
+
+PROJECT ASSETS (${assets.length} total):
+${assetsText || '  (No assets)'}
+
+CURRENT TIMELINE STATE (Source of Truth):
+${timelineData ? JSON.stringify(timelineData, null, 2) : '  (No timeline data - empty project)'}
+`;
 }
 
 // Send a message and get streaming response  
@@ -113,7 +220,10 @@ export const chat = httpAction(async (ctx, request) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) throw new Error("Not authenticated");
 
-    const { message, threadId, projectId, attachments, timelineData } = await request.json() as ChatRequest;
+    const { messages, threadId, projectId, attachments } = await request.json() as ChatRequest;
+
+    // Gather complete editor context
+    const editorContext = await gatherEditorContext(ctx, projectId);
 
     // Continue the thread with the agent
     const { thread } = await videoEditingAgent.continueThread(ctx, {
@@ -143,8 +253,9 @@ export const chat = httpAction(async (ctx, request) => {
         - Current Project ID: ${projectId}
         - Assets uploaded and a description of the assets or with their summary:
         ${JSON.stringify(attachments)}
-        - The actual timeline itself of the entire video:
-        ${JSON.stringify(timelineData)}
+        
+        ${editorContext}
+        
         - The user's message below
 
         Using these context, you should comply with the user's request.
@@ -160,10 +271,7 @@ export const chat = httpAction(async (ctx, request) => {
     // Stream the response
     const result = await thread.streamText({
         system: systemPrompt,
-        messages: [{
-            role: "user",
-            content: convertAttachmentsToContent(attachments, message.content)
-        }],
+        messages: messages,
         maxSteps: 20,
         tools: {
             createDraftScene: createDraftScene(toolProps),
@@ -180,9 +288,18 @@ export const chat = httpAction(async (ctx, request) => {
             splitVideoAsset: splitVideoAsset(toolProps),
             removeBackground: removeBackground(toolProps),
             reorderTimelineAssets: reorderTimelineAssets(toolProps),
+            linkNodes: linkNodes(toolProps),
+            unlinkNodes: unlinkNodes(toolProps),
+            unlinkAllFromNode: unlinkAllFromNode(toolProps),
         },
         toolCallStreaming: true,
         toolChoice: "auto",
+    }, {
+        contextOptions: {
+            excludeToolMessages: true,
+            searchOtherThreads: true,
+            recentMessages: 100,
+        }
     });
 
     const response = result.toDataStreamResponse();

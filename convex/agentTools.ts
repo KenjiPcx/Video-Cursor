@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { api } from "./_generated/api";
-import { Id } from "./_generated/dataModel";
+import { Doc, Id } from "./_generated/dataModel";
 import { videoEditingAgent } from "./agents";
 import dedent from "dedent";
 import { tool } from "ai";
@@ -189,6 +189,7 @@ export const generateImageWithRunway = ({
 
     parameters: z.object({
         prompt: z.string().describe("Detailed description of the image to generate. Be specific about composition, style, lighting, and mood."),
+        resolution: z.string().optional().describe("Resolution for the image (e.g., '1080p', '720p'). Defaults to '1080p'."),
         aspectRatio: z.string().optional().describe("Aspect ratio for the image (e.g., '16:9', '4:3', '1:1'). Defaults to '16:9'."),
         referenceTags: z.array(z.string()).optional().describe("Array of tags that correspond to elements in reference images (e.g., ['@park', '@woman', '@man'])"),
         referenceImages: z.array(z.string()).optional().describe("Array of reference image URLs to guide the generation"),
@@ -202,6 +203,7 @@ export const generateImageWithRunway = ({
             referenceTags: args.referenceTags,
             referenceImages: args.referenceImages,
             name: args.name,
+            resolution: args.resolution || "1080p",
         });
 
         return {
@@ -262,20 +264,20 @@ export const generateImageWithFlux = ({
     threadId,
     userId,
 }: ToolCtx) => tool({
-    description: `Generate or transform images using Flux Kontext Pro model. Excellent for context-aware transformations and style transfers. Best for applying specific styles or transformations to existing images, or generating highly detailed images from text prompts.
+    description: `Transform images using Flux Kontext Pro model. This is an image editing/transformation model that requires an input image. Excellent for context-aware transformations and style transfers. Best for applying specific styles or transformations to existing images.
 
     Use this when:
     - User wants to transform an existing image with a specific style
     - Converting images to different artistic styles (e.g., "Make this a 90s cartoon")
     - User provides an input image and wants it modified
-    - Generating highly detailed, context-aware images from text alone
-    - Need precise keyword understanding and styling
+    - Need precise keyword understanding and styling while preserving image elements
+    - Applying effects or filters to existing visual content
 
-    The model excels at understanding context and applying transformations while preserving important image elements.`,
+    IMPORTANT: This model requires an input image URL - it cannot generate images from text alone. It transforms existing images based on the prompt.`,
 
     parameters: z.object({
-        prompt: z.string().describe("Transformation description or generation prompt. Be specific about the desired style, changes, or content."),
-        inputImage: z.string().optional().describe("URL of an input image to transform. If provided, the model will apply the prompt as a transformation to this image."),
+        prompt: z.string().describe("Transformation description. Be specific about the desired style, changes, or effects to apply to the input image."),
+        inputImage: z.string().describe("URL of the input image to transform (REQUIRED). The model will apply the prompt as a transformation to this image."),
         outputFormat: z.string().optional().describe("Output format for the image ('jpg', 'png', 'webp'). Defaults to 'jpg'."),
         name: z.string().optional().describe("Custom name for the generated asset. If not provided, will auto-generate one."),
     }),
@@ -458,57 +460,536 @@ export const searchVoiceModels = ({
     },
 });
 
+export const viewProjectAssets = ({
+    ctx,
+    projectId,
+}: ToolCtx) => tool({
+    description: `View and search all assets in the current video project. This shows uploaded files, generated AI content, and trimmed segments with their details, metadata, and availability.
+
+    Use this when:
+    - User asks "what assets do I have?" or "show me my files"
+    - Need to find specific assets for timeline placement
+    - Want to see available media before selecting what to use
+    - User mentions files by name and you need to find them
+    - Browsing project content to understand what's available
+    - Looking for specific types of assets (videos, images, audio)
+
+    Shows assets sorted by creation date (newest first) with complete metadata, duration, file sizes, and generation info for AI-created content.`,
+
+    parameters: z.object({
+        searchTerm: z.string().optional().describe("Search assets by name or description (case-insensitive partial matching)"),
+        assetType: z.enum(["video", "image", "audio", "draft"]).optional().describe("Filter by specific asset type"),
+        category: z.enum(["upload", "artifact"]).optional().describe("Filter by category: 'upload' for user uploads, 'artifact' for AI-generated content"),
+        limit: z.number().min(1).max(50).optional().describe("Maximum number of assets to return (1-50, default 20)"),
+        includeMetadata: z.boolean().optional().describe("Include detailed metadata in results (default true)"),
+    }),
+    execute: async (args): Promise<{ success: boolean; message: string; assets?: any[] }> => {
+        try {
+            // Get all assets for the project
+            const allAssets: Doc<"assets">[] = await ctx.runQuery(api.assets.listByProject, { projectId });
+
+            if (!allAssets || allAssets.length === 0) {
+                return {
+                    success: true,
+                    message: "📁 No assets found in this project. Upload some files or generate AI content to get started!",
+                    assets: [],
+                };
+            }
+
+            // Apply filters
+            let filteredAssets = allAssets;
+
+            // Filter by search term
+            if (args.searchTerm) {
+                const searchLower = args.searchTerm.toLowerCase();
+                filteredAssets = filteredAssets.filter(asset =>
+                    asset.name.toLowerCase().includes(searchLower) ||
+                    (asset.description && asset.description.toLowerCase().includes(searchLower))
+                );
+            }
+
+            // Filter by asset type
+            if (args.assetType) {
+                filteredAssets = filteredAssets.filter(asset => asset.type === args.assetType);
+            }
+
+            // Filter by category
+            if (args.category) {
+                filteredAssets = filteredAssets.filter(asset => asset.category === args.category);
+            }
+
+            // Limit results
+            const limit = args.limit || 20;
+            const limitedAssets = filteredAssets.slice(0, limit);
+
+            // Format assets for display
+            const formattedAssets = limitedAssets.map((asset, index) => {
+                const createdAt = new Date(asset._creationTime).toLocaleDateString();
+                const duration = asset.metadata?.duration ? `${asset.metadata.duration.toFixed(1)}s` : 'Unknown duration';
+                const dimensions = asset.metadata?.width && asset.metadata.height
+                    ? `${asset.metadata.width}x${asset.metadata.height}`
+                    : 'Unknown size';
+                const fileSize = asset.metadata?.size
+                    ? `${(asset.metadata.size / (1024 * 1024)).toFixed(1)}MB`
+                    : 'Unknown size';
+
+                // Build metadata summary
+                const metadataLine = asset.type === 'video' ? `${duration}, ${dimensions}, ${fileSize}` :
+                    asset.type === 'image' ? `${dimensions}, ${fileSize}` :
+                        asset.type === 'audio' ? `${duration}, ${fileSize}` :
+                            fileSize;
+
+                // Generation info for AI content
+                const generationInfo = asset.category === 'artifact' && asset.metadata?.generationModel
+                    ? `\n   🤖 AI Generated: ${asset.metadata.generationModel}${asset.metadata.generationPrompt ? ` - "${asset.metadata.generationPrompt}"` : ''}`
+                    : '';
+
+                // Trim info for split segments
+                const trimInfo = asset.metadata?.trimStart !== undefined && asset.metadata?.trimEnd !== undefined
+                    ? `\n   ✂️ Trimmed: ${asset.metadata.trimStart.toFixed(1)}s - ${asset.metadata.trimEnd.toFixed(1)}s`
+                    : '';
+
+                return {
+                    id: asset._id,
+                    name: asset.name,
+                    type: asset.type,
+                    category: asset.category,
+                    createdAt,
+                    metadata: metadataLine,
+                    description: asset.description,
+                    generationInfo: generationInfo || undefined,
+                    trimInfo: trimInfo || undefined,
+                };
+            });
+
+            // Create summary message
+            const assetSummary = formattedAssets
+                .map((asset, index) =>
+                    `${index + 1}. **${asset.name}** (${asset.type}, ${asset.category})\n` +
+                    `   📊 ${asset.metadata}\n` +
+                    `   📅 Created: ${asset.createdAt}` +
+                    (asset.description ? `\n   📝 ${asset.description}` : '') +
+                    (asset.generationInfo || '') +
+                    (asset.trimInfo || '') +
+                    `\n   🆔 Asset ID: ${asset.id}`
+                )
+                .join('\n\n');
+
+            const totalCount = allAssets.length;
+            const filteredCount = filteredAssets.length;
+            const showingCount = limitedAssets.length;
+
+            let headerMessage = `📁 Found ${totalCount} total assets in project`;
+            if (args.searchTerm || args.assetType || args.category) {
+                headerMessage += `, ${filteredCount} match your filters`;
+            }
+            if (showingCount < filteredCount) {
+                headerMessage += `, showing first ${showingCount}`;
+            }
+
+            const filterSummary = [];
+            if (args.searchTerm) filterSummary.push(`search: "${args.searchTerm}"`);
+            if (args.assetType) filterSummary.push(`type: ${args.assetType}`);
+            if (args.category) filterSummary.push(`category: ${args.category}`);
+
+            const filterText = filterSummary.length > 0 ? `\n🔍 Filters: ${filterSummary.join(', ')}` : '';
+
+            return {
+                success: true,
+                message: `${headerMessage}:${filterText}\n\n${assetSummary}${showingCount < filteredCount ? `\n\n... and ${filteredCount - showingCount} more. Use more specific filters to narrow results.` : ''}`,
+                assets: formattedAssets,
+            };
+
+        } catch (error) {
+            console.error('Error viewing project assets:', error);
+            return {
+                success: false,
+                message: `Failed to load project assets: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            };
+        }
+    },
+});
+
 export const removeBackground = ({
     ctx,
     projectId,
-    threadId,
-    userId,
 }: ToolCtx) => tool({
-    description: `Remove background from an image or video using AI. Creates a version with the background removed/made transparent, perfect for overlays, green screen effects, or compositing.
+    description: `Remove background from images or videos using AI. Creates clean assets with transparent backgrounds perfect for overlays and compositing.
 
-    Use this when:
-    - User wants to remove background from an image or video
-    - Creating overlay assets for compositing
-    - Making images/videos with transparent backgrounds
-    - Need to isolate the main subject from the background
-    - Preparing assets for green screen-style effects
+    SUPPORTED ASSET TYPES:
+    - Images: High-quality background removal while preserving main subjects
+    - Videos: Video background isolation for dynamic overlay content
 
-    The AI will automatically detect and remove the background while preserving the main subject (people, objects). Works with both images and videos, automatically selecting the appropriate model based on asset type.`,
+    COMMON USE CASES:
+    - Create overlay graphics for presentations and social media
+    - Prepare assets for advanced compositing workflows  
+    - Generate transparent elements for tutorials and marketing
+    - Build professional content without green screen equipment
+
+    TECHNICAL DETAILS:
+    - Uses specialized AI models optimized for each asset type
+    - Automatically detects and removes backgrounds while preserving subjects
+    - Creates new assets with transparent backgrounds
+    - Maintains original quality and metadata
+    - Fire-and-forget processing with background generation`,
 
     parameters: z.object({
-        assetId: z.string().describe("ID of the image or video asset to process. Must be an existing asset in the project."),
-        name: z.string().optional().describe("Custom name for the background-removed asset. If not provided, will auto-generate one."),
+        assetId: z.string().describe("ID of the image or video asset to remove background from"),
+    }),
+    execute: async (args): Promise<{ success: boolean; message: string; nodeId?: string }> => {
+        try {
+            // Get the asset to validate type and generate appropriate description
+            const asset = await ctx.runQuery(api.assets.get, { id: args.assetId as Id<"assets"> });
+            if (!asset) {
+                return {
+                    success: false,
+                    message: "Asset not found. Please check the asset ID.",
+                };
+            }
+
+            // Validate asset type
+            if (!asset.type.startsWith('image/') && !asset.type.startsWith('video/')) {
+                return {
+                    success: false,
+                    message: "Background removal only supports image and video assets.",
+                };
+            }
+
+            // Create generating node for immediate feedback
+            const nodeId = await ctx.runMutation(api.nodes.createGeneratingNode, {
+                projectId,
+                name: asset.name,
+                generationParams: {},
+                expectedType: asset.type.startsWith('image/') ? 'image' : 'video',
+                generationPrompt: 'Remove the background of the image',
+                generationModel: asset.type.startsWith('image/') ? 'lucataco/remove-bg' : 'nateraw/video-background-remover',
+            });
+
+            // Schedule background removal processing  
+            await ctx.scheduler.runAfter(0, api.aiGeneration.scheduleVideoBackgroundRemoval, {
+                name: asset.name,
+                projectId,
+                assetType: asset.type.startsWith('image/') ? 'image' : 'video',
+                sourceAssetId: args.assetId as Id<"assets">,
+                sourceVideoUrl: asset.url,
+            });
+
+            const assetType = asset.type.startsWith('image/') ? 'image' : 'video';
+            return {
+                success: true,
+                message: `🎭 Started background removal for ${asset.name}. Processing ${assetType} with specialized AI model...`,
+                nodeId,
+            };
+
+        } catch (error) {
+            console.error('Error starting background removal:', error);
+            return {
+                success: false,
+                message: `Failed to start background removal: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            };
+        }
+    },
+});
+
+// === GRAPH EDGE MANAGEMENT TOOLS ===
+
+export const linkNodes = ({
+    ctx,
+    projectId,
+}: ToolCtx) => tool({
+    description: `Connect two nodes in the video editor graph to create story flow and sequence. This is essential for building narrative structure and organizing scenes.
+
+    STORY BUILDING CAPABILITIES:
+    - Create linear sequences: Connect scenes in chronological order
+    - Build branching narratives: Multiple paths from decision points  
+    - Link related content: Connect B-roll to main scenes
+    - Organize asset flow: Connect source material to edited versions
+
+    COMMON USE CASES:
+    - Sequential storytelling: Scene A → Scene B → Scene C
+    - Asset workflows: Raw footage → Split clips → Final edits
+    - Thematic grouping: Connect related scenes or concepts
+    - Timeline preparation: Create the main story path for editing
+
+    AUTOMATIC FEATURES:
+    - Prevents duplicate connections (existing edges are preserved)
+    - Updates timeline path for preview and editing
+    - Maintains graph consistency for visual flow
+    - Works with all node types (draft, video, image, audio assets)
+
+    NOTE: The starting node is automatically created for each project and serves as the timeline root.`,
+
+    parameters: z.object({
+        sourceNodeId: z.string().describe("ID of the source node (where the connection starts from)"),
+        targetNodeId: z.string().describe("ID of the target node (where the connection points to)"),
+    }),
+    execute: async (args): Promise<{ success: boolean; message: string; edgeId?: string }> => {
+        try {
+            // Validate that both nodes exist and belong to the project
+            const [sourceNode, targetNode] = await Promise.all([
+                ctx.runQuery(api.nodes.get, { id: args.sourceNodeId as Id<"nodes"> }),
+                ctx.runQuery(api.nodes.get, { id: args.targetNodeId as Id<"nodes"> }),
+            ]);
+
+            if (!sourceNode) {
+                return {
+                    success: false,
+                    message: "Source node not found. Please check the source node ID.",
+                };
+            }
+
+            if (!targetNode) {
+                return {
+                    success: false,
+                    message: "Target node not found. Please check the target node ID.",
+                };
+            }
+
+            if (sourceNode.projectId !== projectId) {
+                return {
+                    success: false,
+                    message: "Source node does not belong to the current project.",
+                };
+            }
+
+            if (targetNode.projectId !== projectId) {
+                return {
+                    success: false,
+                    message: "Target node does not belong to the current project.",
+                };
+            }
+
+            // Prevent self-linking
+            if (args.sourceNodeId === args.targetNodeId) {
+                return {
+                    success: false,
+                    message: "Cannot link a node to itself.",
+                };
+            }
+
+            // Create the edge (this automatically prevents duplicates)
+            const edgeId = await ctx.runMutation(api.edges.create, {
+                projectId,
+                sourceNodeId: args.sourceNodeId as Id<"nodes">,
+                targetNodeId: args.targetNodeId as Id<"nodes">,
+            });
+
+            const sourceTitle = sourceNode.data?.title || sourceNode.data?.name || `${sourceNode.type} node`;
+            const targetTitle = targetNode.data?.title || targetNode.data?.name || `${targetNode.type} node`;
+
+            return {
+                success: true,
+                message: `🔗 Successfully linked "${sourceTitle}" → "${targetTitle}". The connection is now part of the story flow.`,
+                edgeId,
+            };
+
+        } catch (error) {
+            console.error('Error linking nodes:', error);
+            return {
+                success: false,
+                message: `Failed to link nodes: ${error instanceof Error ? error.message : 'Unknown error'}`,
+            };
+        }
+    },
+});
+
+export const unlinkNodes = ({
+    ctx,
+    projectId,
+}: ToolCtx) => tool({
+    description: `Disconnect two specific nodes in the video editor graph by removing the edge between them. This helps reorganize story flow and break up sequences.
+
+    REORGANIZATION CAPABILITIES:
+    - Break linear sequences: Disconnect scenes to create gaps or branches
+    - Remove unwanted connections: Clean up accidental or outdated links
+    - Restructure narratives: Disconnect to rebuild story flow differently
+    - Isolate content: Separate nodes for independent use
+
+    COMMON USE CASES:
+    - Story restructuring: Remove Scene B from A → B → C sequence
+    - Content reorganization: Disconnect related scenes to group differently
+    - Workflow cleanup: Remove connections between draft and final versions
+    - Timeline editing: Disconnect scenes that shouldn't be in main sequence
+
+    PRECISION TARGETING:
+    - Only removes the specific connection between two nodes
+    - Other connections to these nodes remain intact
+    - Safe operation that won't break other story flows
+    - No effect if the connection doesn't exist`,
+
+    parameters: z.object({
+        sourceNodeId: z.string().describe("ID of the source node (where the connection starts from)"),
+        targetNodeId: z.string().describe("ID of the target node (where the connection points to)"),
     }),
     execute: async (args): Promise<{ success: boolean; message: string }> => {
-        // Get the source asset
-        const sourceAsset = await ctx.runQuery(api.assets.get, { id: args.assetId as Id<"assets"> });
-        if (!sourceAsset) {
+        try {
+            // Validate that both nodes exist and belong to the project
+            const [sourceNode, targetNode] = await Promise.all([
+                ctx.runQuery(api.nodes.get, { id: args.sourceNodeId as Id<"nodes"> }),
+                ctx.runQuery(api.nodes.get, { id: args.targetNodeId as Id<"nodes"> }),
+            ]);
+
+            if (!sourceNode) {
+                return {
+                    success: false,
+                    message: "Source node not found. Please check the source node ID.",
+                };
+            }
+
+            if (!targetNode) {
+                return {
+                    success: false,
+                    message: "Target node not found. Please check the target node ID.",
+                };
+            }
+
+            if (sourceNode.projectId !== projectId) {
+                return {
+                    success: false,
+                    message: "Source node does not belong to the current project.",
+                };
+            }
+
+            if (targetNode.projectId !== projectId) {
+                return {
+                    success: false,
+                    message: "Target node does not belong to the current project.",
+                };
+            }
+
+            // Find the edge between these specific nodes
+            const edge = await ctx.runQuery(api.edges.getOutgoingEdges, {
+                nodeId: args.sourceNodeId as Id<"nodes">
+            }).then(edges =>
+                edges.find(e => e.targetNodeId === args.targetNodeId)
+            );
+
+            if (!edge) {
+                const sourceTitle = sourceNode.data?.title || sourceNode.data?.name || `${sourceNode.type} node`;
+                const targetTitle = targetNode.data?.title || targetNode.data?.name || `${targetNode.type} node`;
+                return {
+                    success: false,
+                    message: `No connection exists between "${sourceTitle}" and "${targetTitle}".`,
+                };
+            }
+
+            // Remove the edge
+            await ctx.runMutation(api.edges.remove, { id: edge._id });
+
+            const sourceTitle = sourceNode.data?.title || sourceNode.data?.name || `${sourceNode.type} node`;
+            const targetTitle = targetNode.data?.title || targetNode.data?.name || `${targetNode.type} node`;
+
+            return {
+                success: true,
+                message: `🔓 Successfully disconnected "${sourceTitle}" from "${targetTitle}". The story flow has been updated.`,
+            };
+
+        } catch (error) {
+            console.error('Error unlinking nodes:', error);
             return {
                 success: false,
-                message: "Source asset not found. Please provide a valid asset ID.",
+                message: `Failed to unlink nodes: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
+    },
+});
 
-        if (!["image", "video"].includes(sourceAsset.type || "")) {
+export const unlinkAllFromNode = ({
+    ctx,
+    projectId,
+}: ToolCtx) => tool({
+    description: `Disconnect all edges from a specific node, effectively isolating it from the story flow. This is useful for major reorganization and cleaning up complex graph structures.
+
+    MAJOR REORGANIZATION CAPABILITIES:
+    - Complete isolation: Remove all incoming and outgoing connections
+    - Clean slate: Prepare node for reconnection in new structure
+    - Graph cleanup: Remove abandoned or outdated connection patterns
+    - Story restructuring: Isolate scenes for complete workflow rebuild
+
+    TYPES OF DISCONNECTION:
+    - Outgoing edges: Connections FROM this node TO other nodes
+    - Incoming edges: Connections FROM other nodes TO this node  
+    - Complete isolation: Node becomes disconnected from all story flows
+
+    COMMON USE CASES:
+    - Major story restructuring: Clear all connections to rebuild narrative
+    - Content reorganization: Isolate scenes before regrouping
+    - Workflow cleanup: Remove complex connection patterns
+    - Timeline reset: Disconnect scenes from main sequence for rework
+
+    CAUTION: This is a powerful operation that removes ALL connections. Use linkNodes afterward to rebuild desired connections.`,
+
+    parameters: z.object({
+        nodeId: z.string().describe("ID of the node to disconnect all edges from"),
+        preserveIncoming: z.boolean().optional().describe("If true, only remove outgoing edges (default: false, removes all edges)"),
+    }),
+    execute: async (args): Promise<{ success: boolean; message: string; removedEdges?: number }> => {
+        try {
+            // Validate that the node exists and belongs to the project
+            const node = await ctx.runQuery(api.nodes.get, { id: args.nodeId as Id<"nodes"> });
+
+            if (!node) {
+                return {
+                    success: false,
+                    message: "Node not found. Please check the node ID.",
+                };
+            }
+
+            if (node.projectId !== projectId) {
+                return {
+                    success: false,
+                    message: "Node does not belong to the current project.",
+                };
+            }
+
+            // Get current edge counts for reporting
+            const [outgoingEdges, incomingEdges] = await Promise.all([
+                ctx.runQuery(api.edges.getOutgoingEdges, { nodeId: args.nodeId as Id<"nodes"> }),
+                ctx.runQuery(api.edges.getIncomingEdges, { nodeId: args.nodeId as Id<"nodes"> }),
+            ]);
+
+            const totalEdgesBefore = outgoingEdges.length + incomingEdges.length;
+
+            if (totalEdgesBefore === 0) {
+                const nodeTitle = node.data?.title || node.data?.name || `${node.type} node`;
+                return {
+                    success: true,
+                    message: `"${nodeTitle}" is already disconnected from all other nodes.`,
+                    removedEdges: 0,
+                };
+            }
+
+            if (args.preserveIncoming) {
+                // Only remove outgoing edges
+                for (const edge of outgoingEdges) {
+                    await ctx.runMutation(api.edges.remove, { id: edge._id });
+                }
+
+                const nodeTitle = node.data?.title || node.data?.name || `${node.type} node`;
+                return {
+                    success: true,
+                    message: `🔓 Removed ${outgoingEdges.length} outgoing connection(s) from "${nodeTitle}". Incoming connections preserved.`,
+                    removedEdges: outgoingEdges.length,
+                };
+            } else {
+                // Remove all edges (both incoming and outgoing)
+                await ctx.runMutation(api.edges.removeAllForNode, { nodeId: args.nodeId as Id<"nodes"> });
+
+                const nodeTitle = node.data?.title || node.data?.name || `${node.type} node`;
+                return {
+                    success: true,
+                    message: `🔓 Completely isolated "${nodeTitle}" by removing ${totalEdgesBefore} connection(s). Node is now disconnected from all story flows.`,
+                    removedEdges: totalEdgesBefore,
+                };
+            }
+
+        } catch (error) {
+            console.error('Error unlinking all from node:', error);
             return {
                 success: false,
-                message: "Asset must be an image or video file. This tool only works with visual content.",
+                message: `Failed to unlink node: ${error instanceof Error ? error.message : 'Unknown error'}`,
             };
         }
-
-        const result = await ctx.runAction(api.aiGeneration.scheduleVideoBackgroundRemoval, {
-            projectId,
-            sourceAssetId: args.assetId,
-            sourceVideoUrl: sourceAsset.url,
-            assetType: sourceAsset.type as "image" | "video",
-            name: args.name,
-        });
-
-        const assetTypeText = sourceAsset.type === "video" ? "video" : "image";
-        return {
-            success: result.success,
-            message: `🎭 ${result.message} Using AI background removal to isolate the main subject from the ${assetTypeText}.`,
-        };
     },
 });
 
@@ -657,8 +1138,8 @@ export const placeAssetOnTimeline = ({
 
     OVERLAY POSITIONING:
     - Use standard video dimensions (1920x1080) as reference
-    - x, y: Top-left corner position in pixels
-    - width, height: Size in pixels
+    - overlayX, overlayY: Top-left corner position in pixels
+    - overlayWidth, overlayHeight: Size in pixels
     - Common positions: Top-right corner (1620, 20, 280, 157), Center (820, 462, 280, 157)
 
     TIMING EXAMPLES:
@@ -673,14 +1154,12 @@ export const placeAssetOnTimeline = ({
         trackType: z.enum(["video", "audio"]).describe("Type of track to place asset on"),
         trackIndex: z.number().min(1).optional().describe("Preferred track number (1, 2, 3...) - will auto-assign if conflicts exist"),
 
-        // Overlay positioning (for video/image overlays)
-        overlay: z.object({
-            x: z.number().min(0).describe("Pixels from left edge (0-1920)"),
-            y: z.number().min(0).describe("Pixels from top edge (0-1080)"),
-            width: z.number().min(1).describe("Width in pixels"),
-            height: z.number().min(1).describe("Height in pixels"),
-            zIndex: z.number().optional().describe("Layer order (higher = on top)"),
-        }).optional().describe("Position as overlay (for video/image assets only)"),
+        // Flattened overlay positioning (for video/image overlays)
+        overlayX: z.number().min(0).optional().describe("Pixels from left edge (0-1920) - for overlay positioning"),
+        overlayY: z.number().min(0).optional().describe("Pixels from top edge (0-1080) - for overlay positioning"),
+        overlayWidth: z.number().min(1).optional().describe("Width in pixels - for overlay positioning"),
+        overlayHeight: z.number().min(1).optional().describe("Height in pixels - for overlay positioning"),
+        overlayZIndex: z.number().optional().describe("Layer order (higher = on top) - for overlay positioning"),
 
         // Audio/Visual properties
         volume: z.number().min(0).max(2.0).optional().describe("Audio volume (0.0-2.0, default 1.0) - use 0.3-0.7 for background music"),
@@ -692,21 +1171,32 @@ export const placeAssetOnTimeline = ({
     }),
     execute: async (args): Promise<{ success: boolean; message: string; timelineItemId?: string; trackId?: string }> => {
         try {
-            // Validate overlay positioning for standard video dimensions
-            if (args.overlay) {
-                const { x, y, width, height } = args.overlay;
-                if (x + width > 1920) {
+            // Build overlay object if overlay parameters are provided
+            let overlay: { x: number; y: number; width: number; height: number; zIndex?: number } | undefined;
+            if (args.overlayX !== undefined && args.overlayY !== undefined &&
+                args.overlayWidth !== undefined && args.overlayHeight !== undefined) {
+
+                // Validate overlay positioning for standard video dimensions
+                if (args.overlayX + args.overlayWidth > 1920) {
                     return {
                         success: false,
-                        message: "Overlay extends beyond video width (1920px). Reduce x position or width.",
+                        message: "Overlay extends beyond video width (1920px). Reduce overlayX position or overlayWidth.",
                     };
                 }
-                if (y + height > 1080) {
+                if (args.overlayY + args.overlayHeight > 1080) {
                     return {
                         success: false,
-                        message: "Overlay extends beyond video height (1080px). Reduce y position or height.",
+                        message: "Overlay extends beyond video height (1080px). Reduce overlayY position or overlayHeight.",
                     };
                 }
+
+                overlay = {
+                    x: args.overlayX,
+                    y: args.overlayY,
+                    width: args.overlayWidth,
+                    height: args.overlayHeight,
+                    zIndex: args.overlayZIndex,
+                };
             }
 
             // Validate timing
@@ -732,7 +1222,7 @@ export const placeAssetOnTimeline = ({
                 endTime: args.endTime,
                 trackType: args.trackType,
                 trackIndex: args.trackIndex,
-                overlay: args.overlay,
+                overlay: overlay,
                 volume: args.volume,
                 opacity: args.opacity,
                 assetStartTime: args.assetStartTime,

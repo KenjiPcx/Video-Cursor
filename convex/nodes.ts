@@ -81,7 +81,7 @@ export const updateGeneratingNodeToAsset = mutation({
         // Determine final node type based on the asset
         const expectedType = node.data.expectedType;
         const finalNodeType = expectedType === "video" ? "videoAsset" :
-            expectedType === "audio" ? "imageAsset" : // Audio nodes display as images for now
+            expectedType === "audio" ? "audioAsset" :
                 "imageAsset";
 
         // Update the node to become a real asset node
@@ -242,7 +242,7 @@ export const createFromAsset = mutation({
 
         // Determine node type based on asset type
         const nodeType = assetType === "video" ? "videoAsset" :
-            assetType === "audio" ? "imageAsset" : // Audio nodes display as images for now
+            assetType === "audio" ? "audioAsset" :
                 "imageAsset";
 
         const nodeId = await ctx.db.insert("nodes", {

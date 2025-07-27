@@ -33,4 +33,7 @@ Always be creative and help users visualize their video concepts through detaile
 
     // Max retries for failed tool calls
     maxRetries: 3,
+    contextOptions: {
+        recentMessages: 10,
+    }
 }); 

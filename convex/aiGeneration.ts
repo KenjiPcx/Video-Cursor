@@ -6,7 +6,9 @@ import Replicate from "replicate";
 import { api, internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 
-const replicate = new Replicate();
+const replicate = new Replicate({
+    auth: process.env.REPLICATE_API_KEY!
+});
 
 // Fire-and-forget scheduling actions (called by agent tools)
 export const scheduleRunwayImageGeneration = action({
@@ -17,16 +19,36 @@ export const scheduleRunwayImageGeneration = action({
         referenceTags: v.optional(v.array(v.string())),
         referenceImages: v.optional(v.array(v.string())),
         name: v.optional(v.string()),
+        resolution: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        const name = args.name || `Generated Image - ${new Date().toISOString()}`;
+
+        // Create loading node immediately for instant feedback
+        const nodeId: Id<"nodes"> = await ctx.runMutation(api.nodes.createGeneratingNode, {
+            projectId: args.projectId,
+            name,
+            expectedType: "image",
+            generationModel: "black-forest-labs/flux-kontext-pro",
+            generationPrompt: args.prompt,
+            generationParams: {
+                aspectRatio: args.aspectRatio,
+                referenceTags: args.referenceTags,
+                referenceImages: args.referenceImages,
+                resolution: args.resolution,
+            },
+        });
+
         // Schedule background generation immediately
         await ctx.scheduler.runAfter(0, internal.aiGeneration.generateRunwayImage, {
+            nodeId,
             projectId: args.projectId,
             prompt: args.prompt,
             aspectRatio: args.aspectRatio || "16:9",
             referenceTags: args.referenceTags || [],
             referenceImages: args.referenceImages || [],
-            name: args.name || `Generated Image - ${new Date().toISOString()}`,
+            name: name,
+            resolution: args.resolution || "1080p",
         });
 
         return {
@@ -41,10 +63,14 @@ export const scheduleFluxImageGeneration = action({
         projectId: v.id("projects"),
         prompt: v.string(),
         inputImage: v.optional(v.string()),
+        aspectRatio: v.optional(v.string()),
         outputFormat: v.optional(v.string()),
+        safetyTolerance: v.optional(v.number()),
+        promptUpsampling: v.optional(v.boolean()),
         name: v.optional(v.string()),
     },
     handler: async (ctx, args) => {
+        console.log("Flux image generation started", args);
         const name = args.name || `Generated Image - ${new Date().toISOString()}`;
 
         // Create loading node immediately for instant feedback
@@ -56,7 +82,10 @@ export const scheduleFluxImageGeneration = action({
             generationPrompt: args.prompt,
             generationParams: {
                 inputImage: args.inputImage,
+                aspectRatio: args.aspectRatio,
                 outputFormat: args.outputFormat || "jpg",
+                safetyTolerance: args.safetyTolerance,
+                promptUpsampling: args.promptUpsampling,
             },
         });
 
@@ -66,7 +95,10 @@ export const scheduleFluxImageGeneration = action({
             projectId: args.projectId,
             prompt: args.prompt,
             inputImage: args.inputImage,
+            aspectRatio: args.aspectRatio,
             outputFormat: args.outputFormat || "jpg",
+            safetyTolerance: args.safetyTolerance,
+            promptUpsampling: args.promptUpsampling,
             name,
         });
 
@@ -322,12 +354,14 @@ export const listFishAudioModels = action({
 // Internal background generation actions (scheduled by the above actions)
 export const generateRunwayImage = internalAction({
     args: {
+        nodeId: v.id("nodes"),
         projectId: v.id("projects"),
         prompt: v.string(),
         aspectRatio: v.string(),
         referenceTags: v.array(v.string()),
         referenceImages: v.array(v.string()),
         name: v.string(),
+        resolution: v.string(),
     },
     handler: async (ctx, args) => {
         try {
@@ -335,28 +369,46 @@ export const generateRunwayImage = internalAction({
 
             const input = {
                 prompt: args.prompt,
+                resolution: args.resolution,
                 aspect_ratio: args.aspectRatio,
                 reference_tags: args.referenceTags,
                 reference_images: args.referenceImages,
             };
+            console.log(input);
 
             const output: any = await replicate.run("runwayml/gen4-image", {
-                input, wait: {
-                    mode: "block",
-                    timeout: 600,
-                }
+                input,
+            }, (prediction) => {
+                console.log(prediction);
             });
 
+            console.log("Runway generation complete, output:", output);
+
+            // Fetch the image from the URL and convert to bytes
+            const imageResponse = await fetch(output.url());
+            if (!imageResponse.ok) {
+                throw new Error(`Failed to fetch generated image: ${imageResponse.status}`);
+            }
+            const imageBytes = await imageResponse.arrayBuffer();
+
             // Save to R2 and assets table in one call
-            await ctx.runAction(api.upload.store, {
+            const result = await ctx.runAction(api.upload.store, {
                 category: "artifact",
                 filename: args.name,
                 mimeType: "image/png",
-                bytes: output.bytes(),
+                bytes: imageBytes,
                 projectId: args.projectId,
                 generationPrompt: args.prompt,
                 generationModel: "runwayml/gen4-image",
                 generationParams: input,
+            });
+
+            // Update the existing loading node to become a real asset node
+            await ctx.runMutation(api.nodes.updateGeneratingNodeToAsset, {
+                nodeId: args.nodeId,
+                assetId: result.assetId!,
+                assetUrl: result.url,
+                assetMetadata: result.metadata,
             });
 
             console.log(`Successfully generated Runway image for project ${args.projectId}`);
@@ -373,7 +425,10 @@ export const generateFluxImage = internalAction({
         projectId: v.id("projects"),
         prompt: v.string(),
         inputImage: v.optional(v.string()),
+        aspectRatio: v.optional(v.string()),
         outputFormat: v.string(),
+        safetyTolerance: v.optional(v.number()),
+        promptUpsampling: v.optional(v.boolean()),
         name: v.string(),
     },
     handler: async (ctx, args) => {
@@ -384,21 +439,30 @@ export const generateFluxImage = internalAction({
                 prompt: args.prompt,
                 output_format: args.outputFormat,
                 ...(args.inputImage && { input_image: args.inputImage }),
+                ...(args.aspectRatio && { aspect_ratio: args.aspectRatio }),
+                ...(args.safetyTolerance !== undefined && { safety_tolerance: args.safetyTolerance }),
+                ...(args.promptUpsampling !== undefined && { prompt_upsampling: args.promptUpsampling }),
             };
 
             const output: any = await replicate.run("black-forest-labs/flux-kontext-pro", {
-                input, wait: {
-                    mode: "block",
-                    timeout: 600,
-                }
+                input
             });
+
+            console.log("Flux generation complete, output:", output);
+
+            // Fetch the image from the URL and convert to bytes
+            const imageResponse = await fetch(output.url());
+            if (!imageResponse.ok) {
+                throw new Error(`Failed to fetch generated image: ${imageResponse.status}`);
+            }
+            const imageBytes = await imageResponse.arrayBuffer();
 
             // Save to R2 and assets table (no automatic node creation)
             const result = await ctx.runAction(api.upload.store, {
                 category: "artifact",
                 filename: args.name,
                 mimeType: args.outputFormat === "png" ? "image/png" : "image/jpeg",
-                bytes: output.bytes(),
+                bytes: imageBytes,
                 projectId: args.projectId,
                 generationPrompt: args.prompt,
                 generationModel: "black-forest-labs/flux-kontext-pro",
@@ -439,18 +503,24 @@ export const generateHailuoVideo = internalAction({
             };
 
             const output: any = await replicate.run("minimax/hailuo-02", {
-                input, wait: {
-                    mode: "block",
-                    timeout: 600,
-                }
+                input
             });
+
+            console.log("Hailuo generation complete, output:", output);
+
+            // Fetch the video from the URL and convert to bytes
+            const videoResponse = await fetch(output.url());
+            if (!videoResponse.ok) {
+                throw new Error(`Failed to fetch generated video: ${videoResponse.status}`);
+            }
+            const videoBytes = await videoResponse.arrayBuffer();
 
             // Save to R2 and assets table (no automatic node creation)
             const result = await ctx.runAction(api.upload.store, {
                 category: "artifact",
                 filename: args.name,
                 mimeType: "video/mp4",
-                bytes: output.bytes(),
+                bytes: videoBytes,
                 projectId: args.projectId,
                 generationPrompt: args.prompt,
                 generationModel: "minimax/hailuo-02",
@@ -683,34 +753,76 @@ export const generateVideoBackgroundRemoval = internalAction({
         try {
             console.log(`Starting ${args.assetType} background removal for project ${args.projectId}, node ${args.nodeId}`);
 
+            // First, detect the actual MIME type of the source asset
+            let actualAssetType = args.assetType;
+            let processedAssetUrl = args.sourceAssetUrl;
+
+            if (args.assetType === "image") {
+                // For images, we need to ensure it's in a supported format (JPG/PNG)
+                const headResponse = await fetch(args.sourceAssetUrl, { method: "HEAD" });
+                const contentType = headResponse.headers.get("content-type");
+
+                console.log(`Detected content type: ${contentType}`);
+
+                // If it's not JPG/PNG, we need to convert it or fetch and re-encode
+                if (contentType && !["image/jpeg", "image/jpg", "image/png"].includes(contentType)) {
+                    console.log(`Converting ${contentType} to PNG for background removal`);
+
+                    // Download the image and convert to PNG
+                    const imageResponse = await fetch(args.sourceAssetUrl);
+                    if (!imageResponse.ok) {
+                        throw new Error(`Failed to fetch source image: ${imageResponse.status}`);
+                    }
+
+                    const imageBytes = await imageResponse.arrayBuffer();
+
+                    // Store the converted image temporarily
+                    const convertedResult = await ctx.runAction(api.upload.store, {
+                        category: "artifact",
+                        filename: `converted-${args.sourceAssetId}.png`,
+                        mimeType: "image/png",
+                        bytes: imageBytes,
+                        projectId: args.projectId,
+                        generationPrompt: `Converted ${contentType} to PNG for background removal`,
+                        generationModel: "format-conversion",
+                    });
+
+                    processedAssetUrl = convertedResult.url;
+                    console.log(`Converted image URL: ${processedAssetUrl}`);
+                }
+            }
+
             // Choose the appropriate Replicate model based on asset type
-            const model = args.assetType === "video"
+            const model = actualAssetType === "video"
                 ? "nateraw/video-background-remover:ac5c138171b04413a69222c304f67c135e259d46089fc70ef12da685b3c604aa"
                 : "lucataco/remove-bg:95fcc2a26d3899cd6c2691c900465aaeff466285a65c14638cc5f36f34befaf1";
 
-            const inputKey = args.assetType === "video" ? "video" : "image";
+            const inputKey = actualAssetType === "video" ? "video" : "image";
+
+            const input = {
+                [inputKey]: processedAssetUrl
+            }
+            console.log(input);
 
             // Call Replicate API for background removal
             const output = await replicate.run(model, {
-                input: {
-                    [inputKey]: args.sourceAssetUrl
-                }
+                input: input
             });
 
             // Get asset URL from output - could be string or object with URL
             const assetUrl = typeof output === 'string' ? output : (output as any)?.url || output;
             if (!assetUrl) {
-                throw new Error(`No ${args.assetType} URL returned from background removal model`);
+                throw new Error(`No ${actualAssetType} URL returned from background removal model`);
             }
 
             // Download the processed asset
             const response = await fetch(assetUrl);
             if (!response.ok) {
-                throw new Error(`Failed to download background-removed ${args.assetType}: ${response.status}`);
+                throw new Error(`Failed to download background-removed ${actualAssetType}: ${response.status}`);
             }
 
             // Determine MIME type based on asset type
-            const mimeType = args.assetType === "video" ? "video/mp4" : "image/png";
+            const mimeType = actualAssetType === "video" ? "video/mp4" : "image/png";
 
             // Save to R2 and assets table
             const result = await ctx.runAction(api.upload.store, {
@@ -719,12 +831,12 @@ export const generateVideoBackgroundRemoval = internalAction({
                 mimeType,
                 bytes: await response.arrayBuffer(),
                 projectId: args.projectId,
-                generationPrompt: `Background removed from ${args.assetType}: ${args.sourceAssetId}`,
+                generationPrompt: `Background removed from ${actualAssetType}: ${args.sourceAssetId}`,
                 generationModel: model.split(":")[0], // Just the model name without version
                 generationParams: {
                     sourceAssetId: args.sourceAssetId,
                     sourceAssetUrl: args.sourceAssetUrl,
-                    assetType: args.assetType,
+                    assetType: actualAssetType,
                 },
             });
 
@@ -736,7 +848,7 @@ export const generateVideoBackgroundRemoval = internalAction({
                 assetMetadata: result.metadata,
             });
 
-            console.log(`Successfully removed background from ${args.assetType} for project ${args.projectId}, node ${args.nodeId}`);
+            console.log(`Successfully removed background from ${actualAssetType} for project ${args.projectId}, node ${args.nodeId}`);
         } catch (error) {
             console.error(`Failed to remove ${args.assetType} background:`, error);
             // TODO: Update node to error state

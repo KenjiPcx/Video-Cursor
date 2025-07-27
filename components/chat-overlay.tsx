@@ -38,10 +38,10 @@ export function ChatOverlay() {
     // Convex mutations and queries  
     const createProject = useMutation(api.projects.create);
     const allProjects = useQuery(api.projects.list);
-    const currentProject = useQuery(
-        api.projects.get,
-        currentProjectId ? { id: currentProjectId as Id<"projects"> } : "skip"
-    );
+    // const currentProject = useQuery(
+    //     api.projects.get,
+    //     currentProjectId ? { id: currentProjectId as Id<"projects"> } : "skip"
+    // );
     const createThread = useMutation(api.chat.createThread);
     const projectThreads = useQuery(
         api.threadMetadata?.getThreadsForProject,
@@ -107,8 +107,8 @@ export function ChatOverlay() {
         experimental_prepareRequestBody: (body) => ({
             id: currentThreadId!,
             projectId: currentProjectId!,
-            message: body.messages.at(-1),
-            phase: isOnboardingMode ? 'onboarding' : 'normal'
+            messages: body.messages,
+            phase: isOnboardingMode ? 'onboarding' : 'normal', 
         }),
         headers: {
             Authorization: `Bearer ${token}`,

@@ -81,10 +81,10 @@ importers:
         specifier: 4.0.327
         version: 4.0.327(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@remotion/media-parser':
-        specifier: ^4.0.327
+        specifier: 4.0.327
         version: 4.0.327
       '@remotion/media-utils':
-        specifier: ^4.0.327
+        specifier: 4.0.327
         version: 4.0.327(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@remotion/paths':
         specifier: 4.0.327
@@ -93,7 +93,7 @@ importers:
         specifier: 4.0.327
         version: 4.0.327(react-dom@19.1.0(react@19.1.0))(react@19.1.0)
       '@remotion/preload':
-        specifier: ^4.0.327
+        specifier: 4.0.327
         version: 4.0.327
       '@remotion/shapes':
         specifier: 4.0.327
@@ -102,7 +102,7 @@ importers:
         specifier: 4.0.327
         version: 4.0.327(@remotion/bundler@4.0.327(react-dom@19.1.0(react@19.1.0))(react@19.1.0))(typescript@5.8.3)(webpack@5.96.1)
       '@remotion/zod-types':
-        specifier: ^4.0.327
+        specifier: 4.0.327
         version: 4.0.327(react-dom@19.1.0(react@19.1.0))(react@19.1.0)(zod@3.25.76)
       '@runwayml/sdk':
         specifier: ^2.5.0

@@ -9,14 +9,19 @@ import { TimelineComposition, TimelineCompositionSchema } from "../remotion/time
 import { Edge } from '@xyflow/react';
 import { useMemo } from "react";
 import { z } from "zod";
-import { populateTimelineFromGraph } from "../components/timeline/timeline-utils";
+import { populateTimelineFromGraph, TimelineData } from "../components/timeline/timeline-utils";
 import { EditorNodeType } from "./editor-graph";
+import { Id } from "@/convex/_generated/dataModel";
 
 interface TimelinePreviewModalProps {
     isOpen: boolean;
     onClose: () => void;
     nodes: EditorNodeType[];
     edges: Edge[];
+    projectData?: {
+        timelineData?: TimelineData;
+    } | null;
+    projectId: Id<"projects">;
 }
 
 export function TimelinePreviewModal({
@@ -24,12 +29,64 @@ export function TimelinePreviewModal({
     onClose,
     nodes,
     edges,
+    projectData,
+    projectId,
 }: TimelinePreviewModalProps) {
 
     const timelineProps: z.infer<typeof TimelineCompositionSchema> | null = useMemo(() => {
         try {
-            // Get timeline data from graph (same logic as timeline panel)
-            const timelineData = populateTimelineFromGraph(nodes, edges);
+            // Use same merging logic as timeline panel
+            const graphTimelineData = populateTimelineFromGraph(nodes, edges);
+
+            // Start with default tracks
+            const defaultTracks = [
+                { id: 'video-1', type: 'video' as const, name: 'Video 1', items: [] },
+                { id: 'audio-1', type: 'audio' as const, name: 'Audio 1', items: [] }
+            ];
+
+            // Get database timeline data
+            const dbTimelineData = projectData?.timelineData;
+            const dbTracks = dbTimelineData?.tracks || defaultTracks;
+
+            // Merge database items with graph items for display
+            const mergedTracks = dbTracks.map(dbTrack => {
+                const graphTrack = graphTimelineData.tracks.find(t => t.id === dbTrack.id);
+
+                // Start with database items (AI-placed assets)
+                const dbItems = dbTrack.items || [];
+
+                // Add graph items that aren't already in database
+                const graphItems = graphTrack?.items.filter(graphItem =>
+                    !dbItems.some(dbItem =>
+                        dbItem.id === `graph-${graphItem.id}` || dbItem.id === graphItem.id
+                    )
+                ) || [];
+
+                // Mark graph items with prefix for identification
+                const markedGraphItems = graphItems.map(item => ({
+                    ...item,
+                    id: `graph-${item.id}`,
+                }));
+
+                return {
+                    ...dbTrack,
+                    items: [...dbItems, ...markedGraphItems].sort((a, b) => a.startTime - b.startTime)
+                };
+            });
+
+            // Calculate total duration
+            const maxDuration = Math.max(
+                dbTimelineData?.duration || 0,
+                graphTimelineData.duration,
+                ...mergedTracks.flatMap(track => track.items.map(item => item.endTime))
+            );
+
+            const timelineData = {
+                tracks: mergedTracks,
+                duration: maxDuration,
+                timelineScale: dbTimelineData?.timelineScale || graphTimelineData.timelineScale || 50,
+                compositionFilters: dbTimelineData?.compositionFilters
+            };
 
             // Check if we have any items to preview
             const hasItems = timelineData.tracks.some(track => track.items.length > 0);
@@ -49,7 +106,7 @@ export function TimelinePreviewModal({
             console.error('Error converting timeline data for preview:', error);
             return null;
         }
-    }, [nodes, edges]);
+    }, [nodes, edges, projectData]);
 
     // Calculate video dimensions and timing
     const fps = 30;
