@@ -94,8 +94,8 @@ export function AssetDetailsPanel({ isOpen, onClose, assetId }: AssetDetailsPane
     const handleDownload = () => {
         if (!assetData) return;
         const link = document.createElement('a');
-        link.href = assetData.url;
-        link.download = assetData.name;
+        link.href = assetData!.url;
+        link.download = assetData!.name;
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
@@ -195,36 +195,36 @@ export function AssetDetailsPanel({ isOpen, onClose, assetId }: AssetDetailsPane
                                     <div className="flex items-center gap-2">
                                         <FileText className="h-4 w-4 text-gray-500" />
                                         <span className="font-medium">Type:</span>
-                                        <span className="text-gray-600">{assetData.metadata?.mimeType || 'Unknown'}</span>
+                                        <span className="text-gray-600">{assetData!.metadata?.mimeType || 'Unknown'}</span>
                                     </div>
 
                                     <div className="flex items-center gap-2">
                                         <span className="font-medium">Size:</span>
-                                        <span className="text-gray-600">{formatFileSize(assetData.metadata?.size)}</span>
+                                        <span className="text-gray-600">{formatFileSize(assetData!.metadata?.size)}</span>
                                     </div>
 
-                                    {assetData.metadata?.width && assetData.metadata?.height && (
+                                    {assetData!.metadata?.width && assetData!.metadata?.height && (
                                         <div className="flex items-center gap-2">
                                             <span className="font-medium">Dimensions:</span>
                                             <span className="text-gray-600">
-                                                {assetData.metadata.width} × {assetData.metadata.height}px
+                                                {assetData!.metadata.width} × {assetData!.metadata.height}px
                                             </span>
                                         </div>
                                     )}
                                 </div>
 
                                 <div className="space-y-2">
-                                    {assetData.type === 'video' && assetData.metadata?.duration && (
+                                    {assetData!.type === 'video' && assetData!.metadata?.duration && (
                                         <div className="flex items-center gap-2">
                                             <Clock className="h-4 w-4 text-gray-500" />
                                             <span className="font-medium">Duration:</span>
-                                            <span className="text-gray-600">{formatDuration(assetData.metadata.duration)}</span>
+                                            <span className="text-gray-600">{formatDuration(assetData!.metadata.duration)}</span>
                                         </div>
                                     )}
 
                                     <div className="flex items-center gap-2">
                                         <span className="font-medium">Asset ID:</span>
-                                        <span className="text-gray-600 font-mono text-xs">{assetData._id}</span>
+                                        <span className="text-gray-600 font-mono text-xs">{assetData!._id}</span>
                                     </div>
                                 </div>
                             </div>
@@ -271,16 +271,16 @@ export function AssetDetailsPanel({ isOpen, onClose, assetId }: AssetDetailsPane
                                             <div className="space-y-2 mt-2">
                                                 <div className="text-gray-600">
                                                     <span className="font-medium">Quick Summary:</span>{' '}
-                                                    {assetData.metadata?.analysis?.quickSummary || 'Analysis completed'}
+                                                    {assetData!.metadata?.analysis?.quickSummary || 'Analysis completed'}
                                                 </div>
-                                                {assetData.metadata?.analysis?.detailedSummary && (
+                                                {assetData!.metadata?.analysis?.detailedSummary && (
                                                     <div className="text-gray-600 text-xs bg-white p-2 rounded border max-h-20 overflow-y-auto">
                                                         <span className="font-medium">Detailed:</span>{' '}
-                                                        {assetData.metadata.analysis.detailedSummary}
+                                                        {assetData!.metadata.analysis.detailedSummary}
                                                     </div>
                                                 )}
                                                 <div className="text-xs text-gray-500">
-                                                    Analyzed {new Date(assetData.metadata?.analysis?.analyzedAt!).toLocaleString()}
+                                                    Analyzed {new Date(assetData!.metadata?.analysis?.analyzedAt!).toLocaleString()}
                                                 </div>
                                             </div>
                                         ) : (
@@ -306,10 +306,10 @@ export function AssetDetailsPanel({ isOpen, onClose, assetId }: AssetDetailsPane
                                             {hasTranscription ? (
                                                 <div className="space-y-2 mt-2">
                                                     <div className="text-gray-600">
-                                                        <span className="font-medium">Status:</span> Transcribed ({assetData.metadata?.transcription?.duration}s)
+                                                        <span className="font-medium">Status:</span> Transcribed ({assetData!.metadata?.transcription?.duration}s)
                                                     </div>
                                                     <div className="text-xs text-gray-500">
-                                                        Transcribed {new Date(assetData.metadata?.transcription?.transcribedAt!).toLocaleString()}
+                                                        Transcribed {new Date(assetData!.metadata?.transcription?.transcribedAt!).toLocaleString()}
                                                     </div>
                                                 </div>
                                             ) : (

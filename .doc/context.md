@@ -270,6 +270,7 @@ Text to editing
   - **Enhanced Asset Details Panel**: Shows comprehensive analysis status in asset modal
     - **Reactive Data Fetching**: Panel now uses `useQuery` to fetch current asset data from database
     - **Real-time Updates**: Analysis results appear immediately when processing completes
+    - **Fixed Hooks Order**: Resolved React hooks order violation by removing early returns and handling loading state in JSX
     - Visual analysis status with quick summary and detailed description display
     - Video transcription status with duration and completion timestamps
     - Manual trigger button when analysis hasn't been completed
